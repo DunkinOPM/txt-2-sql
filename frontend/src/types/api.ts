@@ -98,3 +98,30 @@ export interface QueryResponse {
   error_code?: string | null;
   error_message?: string | null;
 }
+export interface QueryHistoryItem {
+  id: string;
+  dataset_id: string;
+  dataset_name: string;
+  original_question: string;
+  refined_question?: string | null;
+  category?: 'RELEVANT_CLEAR' | 'RELEVANT_AMBIGUOUS' | 'RELEVANT_UNANSWERABLE' | 'OUT_OF_SCOPE' | 'NONSENSICAL' | 'IMPROPER_OR_UNSAFE' | null;
+  status: 'classifying' | 'awaiting_clarification' | 'ready_for_sql' | 'generating_sql' | 'validating_sql' | 'executing' | 'completed' | 'rejected' | 'failed';
+  result_row_count?: number | null;
+  execution_duration_ms?: number | null;
+  error_code?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QueryHistoryListResponse {
+  items: QueryHistoryItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface SuggestedQuestionsResponse {
+  dataset_id: string;
+  dataset_name: string;
+  questions: string[];
+}

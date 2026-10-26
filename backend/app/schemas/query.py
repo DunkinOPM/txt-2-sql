@@ -56,3 +56,33 @@ class QueryResponse(BaseModel):
     updated_at: datetime
     error_code: Optional[str] = None
     error_message: Optional[str] = None
+
+
+class QueryHistoryItemResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    dataset_id: uuid.UUID
+    dataset_name: str
+    original_question: str
+    refined_question: Optional[str] = None
+    category: Optional[str] = None
+    status: str
+    result_row_count: Optional[int] = None
+    execution_duration_ms: Optional[int] = None
+    error_code: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class QueryHistoryListResponse(BaseModel):
+    items: List[QueryHistoryItemResponse]
+    total: int
+    limit: int
+    offset: int
+
+
+class SuggestedQuestionsResponse(BaseModel):
+    dataset_id: uuid.UUID
+    dataset_name: str
+    questions: List[str]

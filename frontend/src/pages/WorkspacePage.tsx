@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Sparkles, AlertCircle, Database, ArrowRight, Play, Loader2 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Sparkles, AlertCircle, Database, ArrowRight, Play, Loader2, PlusCircle } from 'lucide-react';
+import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { apiClient } from '../api/client';
 import { DatasetSummary, QueryResponse } from '../types/api';
 import { DatasetSelector } from '../components/query/DatasetSelector';
@@ -11,8 +11,13 @@ import { QueryStatus } from '../components/query/QueryStatus';
 import { SQLViewer } from '../components/query/SQLViewer';
 import { ResultsTable } from '../components/query/ResultsTable';
 import { ExportResults } from '../components/query/ExportResults';
+import { SuggestedQuestions } from '../components/query/SuggestedQuestions';
 
 export const WorkspacePage: React.FC = () => {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const queryIdParam = searchParams.get('query_id');
+
   const [datasets, setDatasets] = useState<DatasetSummary[]>([]);
   const [selectedDatasetId, setSelectedDatasetId] = useState<string | null>(null);
   const [currentQuery, setCurrentQuery] = useState<QueryResponse | null>(null);
@@ -26,10 +31,10 @@ export const WorkspacePage: React.FC = () => {
     setLoadingDatasets(true);
     apiClient
       .listDatasets()
-      .then((data) => {
+      .then((data: DatasetSummary[]) => {
         setDatasets(data);
         const readyOnes = data.filter((d) => d.status === 'ready');
-        if (readyOnes.length > 0) {
+        if (readyOnes.length > 0 && !selectedDatasetId) {
           setSelectedDatasetId(readyOnes[0].id);
         }
         setLoadingDatasets(false);
@@ -39,6 +44,21 @@ export const WorkspacePage: React.FC = () => {
         setLoadingDatasets(false);
       });
   }, []);
+
+  // Restore query if query_id is provided in URL params
+  useEffect(() => {
+    if (queryIdParam) {
+      apiClient
+        .getQuery(queryIdParam)
+        .then((q) => {
+          setCurrentQuery(q);
+          setSelectedDatasetId(q.dataset_id);
+        })
+        .catch((err: any) => {
+          setError(err.message || 'Failed to restore query from history');
+        });
+    }
+  }, [queryIdParam]);
 
   // Auto-scroll chat to bottom on new messages
   useEffect(() => {
@@ -72,8 +92,8 @@ export const WorkspacePage: React.FC = () => {
 
   const handleExecuteQuery = async () => {
     if (!currentQuery) return;
-    setExecutingQuery(true);
     setError(null);
+    setExecutingQuery(true);
     try {
       const executed = await apiClient.executeQuery(currentQuery.id);
       setCurrentQuery(executed);
@@ -84,9 +104,17 @@ export const WorkspacePage: React.FC = () => {
     }
   };
 
+  const handleStartNewQuery = () => {
+    setCurrentQuery(null);
+    setError(null);
+    navigate('/');
+  };
+
   const activeDataset = datasets.find((d) => d.id === selectedDatasetId);
   const isAwaiting = currentQuery?.status === 'awaiting_clarification';
-  const isProcessing = Boolean(executingQuery || (currentQuery && ['generating_sql', 'validating_sql', 'executing'].includes(currentQuery.status)));
+  const isProcessing = Boolean(
+    executingQuery || (currentQuery && ['generating_sql', 'validating_sql', 'executing'].includes(currentQuery.status))
+  );
 
   return (
     <div className="flex flex-col h-[calc(100vh-7.5rem)] space-y-4">
@@ -100,17 +128,28 @@ export const WorkspacePage: React.FC = () => {
               setSelectedDatasetId(id);
               setCurrentQuery(null);
               setError(null);
+              navigate('/');
             }}
-            disabled={loadingDatasets}
+            disabled={loadingDatasets || isProcessing}
           />
         </div>
 
         {currentQuery && (
-          <div className="bg-white border border-slate-200 rounded-xl px-4 py-2.5 shadow-sm flex items-center justify-between sm:justify-end space-x-3">
-            <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-              Query State:
-            </span>
-            <QueryStatus status={currentQuery.status} category={currentQuery.category} />
+          <div className="bg-white border border-slate-200 rounded-xl px-4 py-2 shadow-xs flex items-center justify-between sm:justify-end space-x-3">
+            <div className="flex items-center space-x-2">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                Query State:
+              </span>
+              <QueryStatus status={currentQuery.status} category={currentQuery.category} />
+            </div>
+            <button
+              type="button"
+              onClick={handleStartNewQuery}
+              className="inline-flex items-center space-x-1 text-[11px] font-semibold px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
+            >
+              <PlusCircle className="w-3 h-3" />
+              <span>New Query</span>
+            </button>
           </div>
         )}
       </div>
@@ -158,14 +197,23 @@ export const WorkspacePage: React.FC = () => {
               </p>
             </div>
 
+            {/* Suggested Questions based on schema */}
+            {activeDataset && (
+              <SuggestedQuestions
+                datasetId={activeDataset.id}
+                datasetName={activeDataset.display_name}
+                onSelectQuestion={handleSendMessage}
+              />
+            )}
+
             <div className="bg-white border border-slate-200 rounded-xl p-3 text-left w-full space-y-1.5 text-xs">
               <span className="font-semibold text-slate-700 block text-[11px] uppercase tracking-wider">
-                Ambiguity-Aware Examples:
+                Ambiguity-Aware Framework:
               </span>
               <ul className="text-slate-500 space-y-1 list-disc list-inside text-[11px]">
-                <li>Clear questions will be executed against authorized read-only data.</li>
-                <li>Ambiguous terms (e.g. &ldquo;top&rdquo; or &ldquo;recent&rdquo;) will trigger follow-up options.</li>
-                <li>Missing columns will be identified without inventing answers.</li>
+                <li>Clear questions execute safely against authorized read-only tables.</li>
+                <li>Ambiguous terms (e.g. &ldquo;best&rdquo; or &ldquo;recent&rdquo;) prompt targeted clarification.</li>
+                <li>Missing columns explain limitations without fabricating answers.</li>
               </ul>
             </div>
           </div>
@@ -176,7 +224,6 @@ export const WorkspacePage: React.FC = () => {
               <ChatMessage
                 key={turn.id}
                 turn={turn}
-                refinedQuestion={currentQuery.refined_question}
               />
             ))}
 
@@ -191,7 +238,7 @@ export const WorkspacePage: React.FC = () => {
 
             {/* Ready for SQL State with explicit trigger */}
             {currentQuery.status === 'ready_for_sql' && (
-              <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl p-4 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
+              <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl p-4 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
                 <div className="flex items-center space-x-2.5">
                   <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
                   <span>
@@ -199,6 +246,7 @@ export const WorkspacePage: React.FC = () => {
                   </span>
                 </div>
                 <button
+                  type="button"
                   onClick={handleExecuteQuery}
                   disabled={executingQuery}
                   className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs transition-colors shrink-0 disabled:opacity-50"
@@ -243,7 +291,7 @@ export const WorkspacePage: React.FC = () => {
                     <ResultsTable
                       columns={currentQuery.columns}
                       rows={currentQuery.rows || []}
-                      rowCount={currentQuery.result_row_count}
+                      rowCount={currentQuery.result_row_count ?? (currentQuery.rows?.length || 0)}
                       durationMs={currentQuery.execution_duration_ms}
                     />
                   </div>
@@ -251,18 +299,17 @@ export const WorkspacePage: React.FC = () => {
               </div>
             )}
 
-            {/* Failed Query Banner */}
-            {currentQuery.status === 'failed' && (
-              <div className="bg-rose-50 border border-rose-200 text-rose-800 rounded-xl p-3.5 text-xs flex items-start space-x-2.5">
-                <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
-                <div className="space-y-1">
-                  <div className="font-semibold text-rose-900">
-                    Execution Error [{currentQuery.error_code || 'QUERY_FAILED'}]
-                  </div>
-                  <div className="text-rose-700">
-                    {currentQuery.assistant_message || currentQuery.error_message || 'The query could not be executed.'}
-                  </div>
+            {/* Terminal Failure / Rejection Banner */}
+            {(currentQuery.status === 'failed' || currentQuery.status === 'rejected') && (
+              <div className="bg-rose-50 border border-rose-200 text-rose-800 rounded-xl p-4 text-xs space-y-1 shadow-xs">
+                <div className="font-bold flex items-center space-x-1.5">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>
+                    {currentQuery.status === 'rejected' ? 'Request Rejected: ' : 'Execution Terminated: '}
+                    {currentQuery.error_code || (currentQuery.status === 'rejected' ? 'REJECTED' : 'QUERY_FAILED')}
+                  </span>
                 </div>
+                <p className="text-rose-700">{currentQuery.error_message || currentQuery.assistant_message}</p>
               </div>
             )}
 

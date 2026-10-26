@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.api.deps import get_current_owner_id
+from app.schemas.query import SuggestedQuestionsResponse
+from app.services.query_service import get_suggested_questions
 from app.schemas.dataset import (
     DatasetSummaryResponse,
     DatasetSchemaResponse,
@@ -109,4 +111,13 @@ def delete_dataset(
     Delete an authorized dataset, dropping its dynamic table and cascading metadata.
     """
     return delete_authorized_dataset(db, dataset_id, owner_id)
-
+@router.get("/{dataset_id}/suggested-questions", response_model=SuggestedQuestionsResponse)
+def get_dataset_suggested_questions(
+    dataset_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    owner_id: str = Depends(get_current_owner_id),
+):
+    """
+    Retrieve 3-4 schema-grounded suggested natural language questions for an authorized dataset.
+    """
+    return get_suggested_questions(db=db, owner_id=owner_id, dataset_id=dataset_id)
