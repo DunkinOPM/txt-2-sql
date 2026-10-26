@@ -141,6 +141,12 @@ _mock_rewriter_handler = None
 _mock_sql_generator_handler = None
 _mock_sql_repairer_handler = None
 _mock_explanation_handler = None
+_mock_suggested_questions_handler = None
+
+
+def set_mock_suggested_questions(handler):
+    global _mock_suggested_questions_handler
+    _mock_suggested_questions_handler = handler
 
 
 def set_mock_classifier(handler):
@@ -475,3 +481,85 @@ def generate_explanation_with_gemini(
     except Exception as e:
         logger.warning(f"Error generating explanation with Gemini: {e}")
         return f"Retrieved {row_count} matching record(s) based on your query."
+def generate_suggested_questions_with_gemini(
+    dataset_name: str,
+    columns: list[dict[str, Any]],
+) -> list[str]:
+    """
+    Generates 3-4 natural language analytical questions grounded ONLY in the dataset's schema.
+    Under no circumstances are raw rows, credentials, or sensitive sample values passed to Gemini.
+    """
+    if _mock_suggested_questions_handler is not None:
+        return _mock_suggested_questions_handler(dataset_name, columns)
+
+    def build_heuristic_questions() -> list[str]:
+        questions = [f"What is the total number of records in {dataset_name}?"]
+        numeric_cols = [
+            c["original_name"] for c in columns
+            if c.get("inferred_type") in ("INTEGER", "BIGINT", "NUMERIC", "FLOAT", "DOUBLE_PRECISION")
+        ]
+        text_cols = [
+            c["original_name"] for c in columns
+            if c.get("inferred_type") in ("TEXT", "VARCHAR")
+        ]
+        date_cols = [
+            c["original_name"] for c in columns
+            if c.get("inferred_type") in ("DATE", "TIMESTAMP", "TIMESTAMPTZ")
+        ]
+
+        if numeric_cols:
+            questions.append(f"What is the highest and lowest {numeric_cols[0]}?")
+        if text_cols:
+            questions.append(f"Show the breakdown of records by {text_cols[0]}.")
+        if date_cols:
+            questions.append(f"What is the earliest and latest {date_cols[0]}?")
+        elif len(numeric_cols) > 1:
+            questions.append(f"What is the average {numeric_cols[1]}?")
+        elif len(text_cols) > 1:
+            questions.append(f"List the distinct values of {text_cols[1]}.")
+
+        return questions[:4]
+
+    try:
+        api_key = settings.gemini_api_key
+        if not api_key or api_key == "placeholder_key":
+            return build_heuristic_questions()
+
+        cols_str = "\n".join(
+            f"- {c.get('original_name')} ({c.get('inferred_type')})"
+            for c in columns
+        )
+        system_instruction = (
+            "You are a data assistant suggesting natural language questions for a dataset. "
+            "Suggest 3 to 4 diverse, concise, interesting questions that can be answered using ONLY "
+            "the provided column names and data types. Do NOT assume any unlisted columns. "
+            "Return ONLY a JSON array of strings, for example: [\"Question 1?\", \"Question 2?\"]"
+        )
+        prompt = (
+            f"Dataset Name: '{dataset_name}'\n"
+            f"Available Schema Columns:\n{cols_str}\n\n"
+            "Return 3 to 4 natural language questions as a JSON list of strings:"
+        )
+
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                temperature=0.3,
+            ),
+        )
+        if not response.text:
+            return build_heuristic_questions()
+
+        cleaned = re.sub(r"^```(?:json)?\s*", "", response.text.strip(), flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+        parsed = json.loads(cleaned)
+        if isinstance(parsed, list) and all(isinstance(x, str) for x in parsed) and parsed:
+            return parsed[:4]
+        return build_heuristic_questions()
+
+    except Exception as e:
+        logger.warning(f"Error generating suggested questions with Gemini: {e}")
+        return build_heuristic_questions()

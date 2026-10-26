@@ -10,14 +10,21 @@ from app.models.metadata import (
     AppQuery,
     AppQueryTurn,
 )
+from sqlalchemy import or_
 from app.schemas.query import (
     QueryResponse,
     QueryTurnResponse,
     ClarificationAnswerRequest,
+    QueryHistoryItemResponse,
+    QueryHistoryListResponse,
+    SuggestedQuestionsResponse,
 )
 from app.workflows.state import QueryWorkflowState
 from app.workflows.graph import query_graph, sql_execution_graph
-from app.services.llm_service import rewrite_query_with_gemini
+from app.services.llm_service import (
+    rewrite_query_with_gemini,
+    generate_suggested_questions_with_gemini,
+)
 
 MAX_CLARIFICATION_LIMIT = 3
 
@@ -571,4 +578,146 @@ def _build_query_response(
         updated_at=query_record.updated_at,
         error_code=query_record.error_code,
         error_message=error_message,
+    )
+VALID_QUERY_STATUSES = {
+    "classifying",
+    "awaiting_clarification",
+    "ready_for_sql",
+    "generating_sql",
+    "validating_sql",
+    "executing",
+    "completed",
+    "rejected",
+    "failed",
+}
+
+VALID_QUERY_CATEGORIES = {
+    "RELEVANT_CLEAR",
+    "RELEVANT_AMBIGUOUS",
+    "RELEVANT_UNANSWERABLE",
+    "OUT_OF_SCOPE",
+    "NONSENSICAL",
+    "IMPROPER_OR_UNSAFE",
+}
+
+
+def list_authorized_queries(
+    db: Session,
+    owner_id: str,
+    dataset_id: Optional[uuid.UUID] = None,
+    status_filter: Optional[str] = None,
+    category_filter: Optional[str] = None,
+    search: Optional[str] = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> QueryHistoryListResponse:
+    """
+    Lists paginated query history belonging strictly to owner_id.
+    Validates status and category filters.
+    If dataset_id is provided, verifies user ownership of that dataset.
+    Supports case-insensitive search across question text.
+    Orders with stable newest-first sorting.
+    """
+    if status_filter is not None:
+        if status_filter not in VALID_QUERY_STATUSES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"error_code": "INVALID_STATUS_FILTER", "message": f"Invalid status filter '{status_filter}'."}
+            )
+
+    if category_filter is not None:
+        if category_filter not in VALID_QUERY_CATEGORIES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"error_code": "INVALID_CATEGORY_FILTER", "message": f"Invalid category filter '{category_filter}'."}
+            )
+
+    if dataset_id is not None:
+        _fetch_authorized_dataset(db, dataset_id, owner_id)
+
+    query = (
+        db.query(AppQuery, AppDataset.display_name.label("dataset_name"))
+        .join(AppDataset, AppQuery.dataset_id == AppDataset.id)
+        .filter(AppQuery.owner_id == owner_id)
+    )
+
+    if dataset_id is not None:
+        query = query.filter(AppQuery.dataset_id == dataset_id)
+
+    if status_filter is not None:
+        query = query.filter(AppQuery.status == status_filter)
+
+    if category_filter is not None:
+        query = query.filter(AppQuery.category == category_filter)
+
+    if search:
+        clean_search = search.strip()
+        if clean_search:
+            search_pattern = f"%{clean_search}%"
+            query = query.filter(
+                or_(
+                    AppQuery.original_question.ilike(search_pattern),
+                    AppQuery.refined_question.ilike(search_pattern),
+                )
+            )
+
+    total_count = query.count()
+
+    records = (
+        query.order_by(AppQuery.created_at.desc(), AppQuery.id.desc())
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
+
+    items = [
+        QueryHistoryItemResponse(
+            id=q.id,
+            dataset_id=q.dataset_id,
+            dataset_name=d_name,
+            original_question=q.original_question,
+            refined_question=q.refined_question,
+            category=q.category,
+            status=q.status,
+            result_row_count=q.result_row_count,
+            execution_duration_ms=q.execution_duration_ms,
+            error_code=q.error_code,
+            created_at=q.created_at,
+            updated_at=q.updated_at,
+        )
+        for q, d_name in records
+    ]
+
+    return QueryHistoryListResponse(
+        items=items,
+        total=total_count,
+        limit=limit,
+        offset=offset,
+    )
+
+
+def get_suggested_questions(
+    db: Session,
+    owner_id: str,
+    dataset_id: uuid.UUID,
+) -> SuggestedQuestionsResponse:
+    """
+    Generates suggested questions for an authorized dataset grounded ONLY in its schema.
+    """
+    dataset = _fetch_authorized_dataset(db, dataset_id, owner_id)
+    columns_meta = _build_columns_metadata(db, dataset_id)
+    minimal_cols = [
+        {"original_name": c["original_name"], "inferred_type": c["inferred_type"]}
+        for c in columns_meta
+    ]
+
+    questions = generate_suggested_questions_with_gemini(
+        dataset_name=dataset.display_name,
+        columns=minimal_cols,
+    )
+
+    return SuggestedQuestionsResponse(
+        dataset_id=dataset.id,
+        dataset_name=dataset.display_name,
+        questions=questions,
     )

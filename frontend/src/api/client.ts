@@ -5,6 +5,8 @@ import {
   DatasetPreview,
   DatasetDeleteResult,
   QueryResponse,
+  QueryHistoryListResponse,
+  SuggestedQuestionsResponse,
 } from '../types/api';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
@@ -130,6 +132,30 @@ class ApiClient {
 
   public async getQuery(queryId: string): Promise<QueryResponse> {
     return this.request<QueryResponse>(`/api/queries/${queryId}`);
+  }
+
+  public async getQueries(params?: {
+    datasetId?: string;
+    status?: string;
+    category?: string;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<QueryHistoryListResponse> {
+    const qp = new URLSearchParams();
+    if (params?.datasetId) qp.append('dataset_id', params.datasetId);
+    if (params?.status) qp.append('status', params.status);
+    if (params?.category) qp.append('category', params.category);
+    if (params?.search) qp.append('search', params.search);
+    if (params?.limit !== undefined) qp.append('limit', params.limit.toString());
+    if (params?.offset !== undefined) qp.append('offset', params.offset.toString());
+
+    const qs = qp.toString() ? `?${qp.toString()}` : '';
+    return this.request<QueryHistoryListResponse>(`/api/queries${qs}`);
+  }
+
+  public async getSuggestedQuestions(datasetId: string): Promise<SuggestedQuestionsResponse> {
+    return this.request<SuggestedQuestionsResponse>(`/api/datasets/${datasetId}/suggested-questions`);
   }
 
   public getExportUrl(queryId: string): string {
