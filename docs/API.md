@@ -12,11 +12,19 @@ By default, the backend API runs at:
 ```
 http://127.0.0.1:8000
 ```
+In Docker Compose deployments, the frontend proxies `/api/` directly to the backend service.
+
+### Authentication & Authorization Model
+- **JWT Bearer Authentication:** All protected endpoints require a signed HS256 JSON Web Token (JWT) provided in the `Authorization` header as `Bearer <token>` or as an HttpOnly `access_token` session cookie.
+- **Passwords:** Plaintext passwords are never stored or logged. Stored credentials use 12-round `bcrypt` key derivation with random salting.
+- **Anti-Spoofing & Impersonation Protection:** User identity is derived strictly from the verified JWT payload (`sub`). Caller-supplied `X-User-ID` headers are ignored and cannot impersonate other users.
+- **Gated Mock Authentication:** `ENABLE_MOCK_AUTH` is strictly disabled by default (`false`) outside explicit local development. In production, unauthenticated requests are rejected immediately with `401 Unauthorized`.
+- **Ownership Isolation:** All datasets, table mappings, generated queries, clarification turns, and CSV exports are strictly isolated by owner ID. Inaccessible resources return `404 Not Found` to prevent resource existence enumeration.
 
 ### Request Headers
 | Header | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
-| `X-User-ID` | String | No | Owner identifier used for multi-user dataset and query isolation. Defaults to `default_user` when omitted in local development. |
+| `Authorization` | String | Yes (Protected) | Bearer token format: `Bearer <JWT_ACCESS_TOKEN>`. |
 | `X-Request-ID` | String (UUID) | No | Client correlation identifier. If omitted, the server automatically generates a UUIDv4. |
 
 ### Response Headers
@@ -38,9 +46,116 @@ All 4xx and 5xx errors follow a standardized JSON envelope:
 ```
 *Note: Unhandled 500 exceptions return sanitized error messages and never leak raw tracebacks, SQLAlchemy internals, database credentials, or sensitive uploaded data.*
 
+### Error Codes Summary
+| Status | Error Code | Description |
+| :--- | :--- | :--- |
+| `400` | `INVALID_PARAMETERS` | Malformed parameters, invalid status/category filters, or query execution preconditions not met. |
+| `401` | `UNAUTHORIZED` | Missing, malformed, or invalid Bearer token. |
+| `401` | `TOKEN_EXPIRED` | JWT access token expired. Re-authentication required. |
+| `401` | `INVALID_CREDENTIALS` | Incorrect username/email or password during login. |
+| `403` | `ACCOUNT_INACTIVE` | User account has been deactivated. |
+| `404` | `NOT_FOUND` | Resource does not exist or belongs to another user. |
+| `409` | `EMAIL_ALREADY_REGISTERED` | User registration failed due to duplicate email address. |
+| `409` | `USERNAME_ALREADY_TAKEN` | User registration failed due to duplicate username. |
+| `413` | `FILE_TOO_LARGE` | Uploaded file size exceeds the configured limit (`MAX_UPLOAD_MB`). |
+| `422` | `VALIDATION_ERROR` | Request body or query parameters failed Pydantic schema validation. |
+| `429` | `RATE_LIMIT_EXCEEDED` | Request rate exceeded the sliding window limit. Includes `Retry-After` header. |
+| `500` | `INTERNAL_SERVER_ERROR` | Sanitized server error with correlation `request_id`. |
+
 ---
 
-## 2. Health & System Endpoints
+## 2. Authentication Endpoints
+
+### `POST /api/auth/register`
+Registers a new user account. Returns a signed JWT token and user profile.
+- Rate-limited per client IP.
+- Hashes passwords using bcrypt with a 12-round salt.
+
+**Request Body (`UserRegisterRequest`):**
+```json
+{
+  "email": "analyst@example.com",
+  "username": "analyst_alice",
+  "password": "SecurePassword123!"
+}
+```
+
+**Response `201 Created` (`TokenResponse`):**
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer",
+  "expires_in": 86400,
+  "user": {
+    "id": "e4f5a2b1-1234-4567-89ab-cdef01234567",
+    "email": "analyst@example.com",
+    "username": "analyst_alice",
+    "created_at": "2026-10-27T02:00:00Z"
+  }
+}
+```
+
+---
+
+### `POST /api/auth/login`
+Authenticates registered user credentials. Returns signed JWT token.
+- Rate-limited per client IP.
+- Timing-attack mitigated.
+
+**Request Body (`UserLoginRequest`):**
+```json
+{
+  "username_or_email": "analyst_alice",
+  "password": "SecurePassword123!"
+}
+```
+
+**Response `200 OK` (`TokenResponse`):**
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer",
+  "expires_in": 86400,
+  "user": {
+    "id": "e4f5a2b1-1234-4567-89ab-cdef01234567",
+    "email": "analyst@example.com",
+    "username": "analyst_alice",
+    "created_at": "2026-10-27T02:00:00Z"
+  }
+}
+```
+
+---
+
+### `GET /api/auth/me`
+Retrieves current profile metadata for the authenticated user session.
+- Requires `Authorization: Bearer <token>`.
+
+**Response `200 OK` (`UserResponse`):**
+```json
+{
+  "id": "e4f5a2b1-1234-4567-89ab-cdef01234567",
+  "email": "analyst@example.com",
+  "username": "analyst_alice",
+  "created_at": "2026-10-27T02:00:00Z"
+}
+```
+
+---
+
+### `POST /api/auth/logout`
+Invalidates client session and clears authentication cookies.
+
+**Response `200 OK`:**
+```json
+{
+  "message": "Successfully logged out."
+}
+```
+
+---
+
+## 3. Health & System Endpoints
 
 ### `GET /`
 Returns service metadata and operating status.
@@ -48,9 +163,10 @@ Returns service metadata and operating status.
 **Response `200 OK`:**
 ```json
 {
-  "title": "Clarification-Driven Conversational Text-to-SQL API",
+  "project": "Clarification-Driven Conversational Text-to-SQL",
   "version": "0.1.0",
-  "status": "running"
+  "status": "online",
+  "docs_url": "/docs"
 }
 ```
 
@@ -62,18 +178,21 @@ Verifies database connectivity and service health.
 **Response `200 OK`:**
 ```json
 {
-  "status": "ok",
+  "status": "healthy",
   "database": "connected",
-  "timestamp": "2026-10-26T21:00:00Z"
+  "readonly_database": "connected",
+  "version": "0.1.0",
+  "environment": "development"
 }
 ```
 
 ---
 
-## 3. Dataset Management Endpoints
+## 4. Dataset Management Endpoints
 
 ### `POST /api/datasets`
-Uploads and imports a tabular CSV or XLSX file.
+Uploads and imports a tabular CSV or XLSX file for the authenticated user.
+- Rate-limited per client IP/user.
 - Creates a dedicated physical table in PostgreSQL schema `uploaded_data`.
 - Normalizes column headers into valid SQL identifiers deterministically.
 - Infers conservative SQL data types (`BIGINT`, `NUMERIC`, `TIMESTAMPTZ`, `BOOLEAN`, `TEXT`).
@@ -87,7 +206,7 @@ Uploads and imports a tabular CSV or XLSX file.
 ```json
 {
   "id": "7b8e1951-fc45-4df3-a15d-ebcaee6a7a02",
-  "owner_id": "default_user",
+  "owner_id": "e4f5a2b1-1234-4567-89ab-cdef01234567",
   "display_name": "students",
   "original_filename": "students.csv",
   "file_format": "csv",
@@ -95,43 +214,17 @@ Uploads and imports a tabular CSV or XLSX file.
   "column_count": 4,
   "status": "ready",
   "error_message": null,
-  "created_at": "2026-10-26T21:05:00.123456Z",
-  "updated_at": "2026-10-26T21:05:00.123456Z"
+  "created_at": "2026-10-27T02:05:00.123456Z",
+  "updated_at": "2026-10-27T02:05:00.123456Z"
 }
 ```
-
-**Common Error Codes:**
-- `400 EMPTY_FILE`: File content is 0 bytes.
-- `400 EMPTY_FILENAME`: File upload did not provide a filename.
-- `400 UNSUPPORTED_FORMAT`: File extension is not `.csv` or `.xlsx`.
-- `413 FILE_TOO_LARGE`: File exceeds `MAX_UPLOAD_MB` (default 20 MB).
-- `400 NO_DATA_ROWS`: File contains only headers with 0 data rows.
-- `400 ROW_LIMIT_EXCEEDED`: File exceeds 100,000 rows.
-- `400 COLUMN_LIMIT_EXCEEDED`: File exceeds 250 columns.
 
 ---
 
 ### `GET /api/datasets`
-Lists all datasets owned by the requesting user.
+Lists all datasets owned by the authenticated user.
 
-**Response `200 OK`:**
-```json
-[
-  {
-    "id": "7b8e1951-fc45-4df3-a15d-ebcaee6a7a02",
-    "owner_id": "default_user",
-    "display_name": "students",
-    "original_filename": "students.csv",
-    "file_format": "csv",
-    "row_count": 1500,
-    "column_count": 4,
-    "status": "ready",
-    "error_message": null,
-    "created_at": "2026-10-26T21:05:00.123456Z",
-    "updated_at": "2026-10-26T21:05:00.123456Z"
-  }
-]
-```
+**Response `200 OK`:** `List[DatasetSummaryResponse]`
 
 ---
 
@@ -150,34 +243,21 @@ Inspects the inferred schema details, column mappings, data types, and non-sensi
 ```json
 {
   "dataset_id": "7b8e1951-fc45-4df3-a15d-ebcaee6a7a02",
-  "table_name": "tbl_7b8e1951fc454df3a15debcaee6a7a02",
   "display_name": "students",
+  "table_name": "dataset_7b8e1951fc454df3a15debcaee6a7a02",
   "row_count": 1500,
   "column_count": 4,
   "columns": [
     {
-      "id": "9f11ca22-1234-4567-890a-bcdef0123456",
-      "original_name": "Student Name",
-      "internal_name": "student_name",
-      "inferred_type": "TEXT",
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "dataset_id": "7b8e1951-fc45-4df3-a15d-ebcaee6a7a02",
       "ordinal_position": 1,
-      "sample_values": null
-    },
-    {
-      "id": "9f11ca22-1234-4567-890a-bcdef0123457",
-      "original_name": "Department",
-      "internal_name": "department",
-      "inferred_type": "TEXT",
-      "ordinal_position": 2,
-      "sample_values": ["Computer Science", "Mathematics", "Physics"]
-    },
-    {
-      "id": "9f11ca22-1234-4567-890a-bcdef0123458",
-      "original_name": "CGPA",
-      "internal_name": "cgpa",
-      "inferred_type": "NUMERIC",
-      "ordinal_position": 3,
-      "sample_values": null
+      "original_name": "Student ID",
+      "internal_name": "student_id",
+      "inferred_type": "BIGINT",
+      "nullable": false,
+      "sample_values": null,
+      "created_at": "2026-10-27T02:05:00Z"
     }
   ]
 }
@@ -186,41 +266,28 @@ Inspects the inferred schema details, column mappings, data types, and non-sensi
 ---
 
 ### `GET /api/datasets/{dataset_id}/preview`
-Returns a bounded sample preview of rows from the physical PostgreSQL table.
+Retrieves bounded raw rows (1 to 100 rows) directly from the underlying physical table.
 
 **Query Parameters:**
-| Parameter | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `limit` | Integer | 25 | Maximum number of rows to return (capped at 100). |
+- `limit`: Integer (1 to 100, default `20`).
 
 **Response `200 OK` (`DatasetPreviewResponse`):**
 ```json
 {
   "dataset_id": "7b8e1951-fc45-4df3-a15d-ebcaee6a7a02",
-  "table_name": "tbl_7b8e1951fc454df3a15debcaee6a7a02",
-  "total_preview_rows": 25,
-  "total_dataset_rows": 1500,
-  "columns": ["Student Name", "Department", "CGPA"],
-  "internal_columns": ["student_name", "department", "cgpa"],
-  "column_types": {
-    "student_name": "TEXT",
-    "department": "TEXT",
-    "cgpa": "NUMERIC"
-  },
+  "columns": ["student_id", "student_name", "department", "gpa"],
   "rows": [
-    {
-      "student_name": "Alice Smith",
-      "department": "Computer Science",
-      "cgpa": 3.85
-    }
-  ]
+    {"student_id": 1, "student_name": "Alice Smith", "department": "Computer Science", "gpa": 3.85}
+  ],
+  "total_rows": 1500
 }
 ```
 
 ---
 
 ### `GET /api/datasets/{dataset_id}/suggested-questions`
-Generates natural-language exploration ideas grounded **strictly in schema metadata**. Does NOT inspect or transmit uploaded data rows to LLM providers.
+Generates 3 to 4 schema-grounded natural language query suggestions.
+- Uses only authorized table column metadata. Uploaded row data is never transmitted to LLM.
 
 **Response `200 OK` (`SuggestedQuestionsResponse`):**
 ```json
@@ -228,9 +295,9 @@ Generates natural-language exploration ideas grounded **strictly in schema metad
   "dataset_id": "7b8e1951-fc45-4df3-a15d-ebcaee6a7a02",
   "dataset_name": "students",
   "questions": [
-    "What is the average CGPA by Department?",
-    "Which Department has the highest number of students?",
-    "Show the top 10 students ordered by CGPA descending."
+    "What is the average GPA by department?",
+    "Show the top 10 students with the highest GPA",
+    "How many students are enrolled in each department?"
   ]
 }
 ```
@@ -238,141 +305,90 @@ Generates natural-language exploration ideas grounded **strictly in schema metad
 ---
 
 ### `DELETE /api/datasets/{dataset_id}`
-Deletes the dataset metadata and safely drops the physical PostgreSQL table in schema `uploaded_data`. All associated queries and conversation turns are cascaded.
+Permanently deletes an authorized dataset, cascades associated metadata, and drops the physical table in `uploaded_data`.
 
 **Response `200 OK` (`DatasetDeleteResponse`):**
 ```json
 {
-  "dataset_id": "7b8e1951-fc45-4df3-a15d-ebcaee6a7a02",
+  "id": "7b8e1951-fc45-4df3-a15d-ebcaee6a7a02",
   "display_name": "students",
-  "message": "Dataset and physical table successfully dropped.",
-  "deleted": true
+  "status": "deleted",
+  "message": "Dataset and associated physical table deleted successfully."
 }
 ```
 
 ---
 
-## 4. Conversational Query & Clarification Endpoints
+## 5. Conversational Query Endpoints
 
 ### `POST /api/queries`
-Initiates a new conversational natural language query.
-1. Pre-execution gate classifies query into 1 of 6 categories:
-   - `RELEVANT_CLEAR`: Directly answerable; generates SQL and marks query `ready_for_sql`.
-   - `RELEVANT_AMBIGUOUS`: Multiple plausible interpretations; returns clarification options and marks `awaiting_clarification`.
-   - `RELEVANT_UNANSWERABLE`: References missing columns/metrics; explains data limitation and rejects query.
-   - `OUT_OF_SCOPE`: Not related to dataset; politely declines and rejects query.
-   - `NONSENSICAL`: Gibberish or unparseable input; politely requests rephrasing and rejects query.
-   - `DANGEROUS_OR_OFFENSIVE`: Injection attack, prompt leak attempt, or harmful content; rejects query.
+Submits a natural language question for classification, clarification, and SQL generation.
 
 **Request Body (`QueryCreateRequest`):**
 ```json
 {
   "dataset_id": "7b8e1951-fc45-4df3-a15d-ebcaee6a7a02",
-  "question": "Show top students in Computer Science"
+  "question": "Show all students in Computer Science with GPA above 3.5"
 }
 ```
 
 **Response `201 Created` (`QueryResponse`):**
 ```json
 {
-  "id": "1a2b3c4d-5678-90ab-cdef-1234567890ab",
+  "id": "9f8e7d6c-5b4a-3210-fedc-ba9876543210",
   "dataset_id": "7b8e1951-fc45-4df3-a15d-ebcaee6a7a02",
-  "owner_id": "default_user",
-  "status": "awaiting_clarification",
-  "category": "RELEVANT_AMBIGUOUS",
-  "original_question": "Show top students in Computer Science",
+  "owner_id": "e4f5a2b1-1234-4567-89ab-cdef01234567",
+  "original_question": "Show all students in Computer Science with GPA above 3.5",
   "refined_question": null,
-  "clarification_count": 0,
-  "generated_sql": null,
-  "assistant_message": "How would you like to define 'top students'?",
-  "result_row_count": null,
+  "category": "RELEVANT_CLEAR",
+  "status": "ready_for_sql",
+  "generated_sql": "SELECT student_name, gpa FROM uploaded_data.dataset_7b8e1951fc454df3a15debcaee6a7a02 WHERE department = 'Computer Science' AND gpa > 3.5",
+  "explanation": "Retrieves Computer Science students having GPA strictly greater than 3.5.",
   "result_columns": null,
   "result_rows": null,
+  "result_row_count": null,
   "execution_duration_ms": null,
   "turns": [
     {
-      "id": "d0e1f2a3-...",
-      "query_id": "1a2b3c4d-...",
       "turn_number": 1,
       "role": "user",
-      "turn_type": "user_query",
-      "content": "Show top students in Computer Science",
-      "created_at": "2026-10-26T21:10:00Z"
-    },
-    {
-      "id": "d0e1f2a4-...",
-      "query_id": "1a2b3c4d-...",
-      "turn_number": 2,
-      "role": "assistant",
-      "turn_type": "clarification_request",
-      "content": "How would you like to define 'top students'?",
-      "options": ["Students with CGPA >= 3.8", "Top 5 students by CGPA", "Top 10% of students"],
-      "created_at": "2026-10-26T21:10:01Z"
+      "turn_type": "question",
+      "content": "Show all students in Computer Science with GPA above 3.5",
+      "clarification_options": null,
+      "created_at": "2026-10-27T02:08:00Z"
     }
-  ],
-  "created_at": "2026-10-26T21:10:00Z",
-  "updated_at": "2026-10-26T21:10:01Z"
+  ]
 }
 ```
 
 ---
 
 ### `POST /api/queries/{query_id}/clarifications`
-Submits a user's clarification answer (selected option and/or free text).
-- Re-evaluates query context with multi-turn history.
-- Maximum clarification loop limit: **3 turns**. If ambiguous after 3 turns, marks `rejected` with an explanatory summary.
+Submits an answer to a clarification prompt for an ambiguous query.
 
-**Request Body (`ClarificationRequest`):**
+**Request Body (`ClarificationAnswerRequest`):**
 ```json
 {
-  "selected_option": "Top 5 students by CGPA",
+  "selected_option": "Computer Science (department)",
   "free_text_answer": null
 }
 ```
 
-**Response `200 OK` (`QueryResponse`):** Returns updated query. If unambiguous, status transitions to `ready_for_sql` with `generated_sql`.
+**Response `200 OK`:** `QueryResponse`
 
 ---
 
 ### `POST /api/queries/{query_id}/execute`
-Executes the validated SQL query against PostgreSQL under least-privilege role `readonly_user`.
-- Enforces `statement_timeout = 5000ms`.
-- Enforces `SET TRANSACTION READ ONLY`.
-- Enforces server-side limit of 1,000 rows.
-- Automatically repairs transient SQL errors (e.g., column misalignments) up to **2 attempts** with full AST revalidation before execution.
-- Generates a plain-English explanation of the tabular findings.
+Executes validated SQL against the database using the least-privilege `readonly_user`.
+- Enforces 5,000ms statement timeout.
+- Caps result sets at 1,000 rows.
 
-**Response `200 OK` (`QueryResponse`):**
-```json
-{
-  "id": "1a2b3c4d-5678-90ab-cdef-1234567890ab",
-  "status": "completed",
-  "category": "RELEVANT_AMBIGUOUS",
-  "generated_sql": "SELECT student_name, cgpa FROM uploaded_data.tbl_7b8e1951fc454df3a15debcaee6a7a02 WHERE department = 'Computer Science' ORDER BY cgpa DESC LIMIT 5",
-  "assistant_message": "Found the top 5 students in Computer Science ranked by CGPA.",
-  "result_row_count": 5,
-  "result_columns": ["student_name", "cgpa"],
-  "result_rows": [
-    {"student_name": "Charlie Brown", "cgpa": 3.90},
-    {"student_name": "Alice Smith", "cgpa": 3.85}
-  ],
-  "execution_duration_ms": 14,
-  "created_at": "2026-10-26T21:10:00Z",
-  "updated_at": "2026-10-26T21:10:05Z"
-}
-```
-
-**Common Error Codes:**
-- `400 QUERY_NOT_READY`: Query status is not `ready_for_sql`.
-- `400 SQL_VALIDATION_ERROR`: SQL failed AST security rules (mutation, unlisted table, unlisted column).
-- `400 SQL_EXECUTION_TIMEOUT`: Execution exceeded 5,000ms statement timeout.
-- `400 SQL_REPAIR_EXHAUSTED`: Query failed after 2 bounded repair attempts.
+**Response `200 OK`:** `QueryResponse` (with `status: completed`, `result_columns`, `result_rows`).
 
 ---
 
 ### `GET /api/queries/{query_id}`
-Retrieves historical query details, conversation turns, generated SQL, and stored execution results in read-only mode.
-*Does NOT trigger SQL execution or LLM generation.*
+Retrieves query history details in read-only mode. Does not trigger execution.
 
 **Response `200 OK`:** `QueryResponse`<br/>
 **Errors:** `404 NOT_FOUND` if query does not exist or belongs to another user.
@@ -381,18 +397,16 @@ Retrieves historical query details, conversation turns, generated SQL, and store
 
 ### `GET /api/queries/{query_id}/export`
 Exports query results as an RFC 4180 compliant CSV file.
-- Automatically sanitizes formula injection triggers (`=`, `+`, `-`, `@`, `\t`, `\r`) by prepending a single quote `'`.
+- Formula injection triggers (`=`, `+`, `-`, `@`, `\t`, `\r`) are sanitized by prepending `'`.
 
-**Response `200 OK`:**
-- `Content-Type: text/csv; charset=utf-8`
-- `Content-Disposition: attachment; filename="query_{query_id[:8]}_results.csv"`
+**Response `200 OK`:** `text/csv; charset=utf-8`
 
 ---
 
-## 5. Query History & Exploration Endpoints
+## 6. Query History & Exploration Endpoints
 
 ### `GET /api/queries`
-Searches, filters, and paginates previous user queries. Strictly filtered by the requesting owner.
+Searches, filters, and paginates previous queries owned by the authenticated user.
 
 **Query Parameters:**
 | Parameter | Type | Required | Description |
@@ -404,7 +418,7 @@ Searches, filters, and paginates previous user queries. Strictly filtered by the
 | `limit` | Integer | No | Page size (1 to 100, default `20`). |
 | `offset` | Integer | No | Pagination offset (>= 0, default `0`). |
 
-**Response `200 OK` (`QueryHistoryResponse`):**
+**Response `200 OK` (`QueryHistoryListResponse`):**
 ```json
 {
   "total": 42,
@@ -421,7 +435,7 @@ Searches, filters, and paginates previous user queries. Strictly filtered by the
       "refined_question": null,
       "result_row_count": 50,
       "execution_duration_ms": 12,
-      "created_at": "2026-10-26T21:10:00Z"
+      "created_at": "2026-10-27T02:10:00Z"
     }
   ]
 }
@@ -429,10 +443,13 @@ Searches, filters, and paginates previous user queries. Strictly filtered by the
 
 ---
 
-## 6. End-to-End Security Guardrails Summary
+## 7. End-to-End Security Guardrails Summary
 
-1. **AST Whitelist Verification:** Every generated and repaired SQL statement is parsed with SQLGlot. Statements must be a single `SELECT` or safe read-only CTE. System tables (`information_schema`, `pg_catalog`), unauthorized schemas, file access functions, and mutations (`INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER`) are strictly rejected.
-2. **PostgreSQL Role Isolation:** Execution runs under `readonly_user`. The application schema `app` (containing metadata and credentials) is revoked from `readonly_user`.
-3. **Execution Guardrails:** 5,000ms statement timeout and 1,000-row result cap enforced prior to running any query.
-4. **Formula Injection Sanitization:** CSV exports prefix formula triggers (`=`, `+`, `-`, `@`, `\t`, `\r`) with single quotes `'`.
-5. **No Data Leakage to LLM:** LLM prompts for classification, clarification, and suggested questions consume only column names, inferred types, and minimal non-sensitive category values. Uploaded row data is never transmitted to external providers.
+1. **JWT Authentication & Bcrypt Passwords:** All users authenticate via signed HS256 JWT tokens. Passwords are encrypted with bcrypt (12 rounds) and never stored or logged in plaintext.
+2. **Strict Identity Isolation:** Caller-supplied `X-User-ID` headers are ignored and cannot impersonate other users. Inaccessible resources return `404 Not Found`.
+3. **AST Whitelist Verification:** Every generated and repaired SQL statement is parsed with SQLGlot. Statements must be a single `SELECT` or safe read-only CTE. System tables (`information_schema`, `pg_catalog`), unauthorized schemas, file access functions, and mutations (`INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER`) are strictly rejected.
+4. **PostgreSQL Role Isolation:** Execution runs under `readonly_user`. The application schema `app` (containing metadata, users, credentials, and query turns) is explicitly revoked from `readonly_user`.
+5. **Rate Limiting:** Sliding-window rate limiters prevent credential stuffing and upload abuse.
+6. **Execution Guardrails:** 5,000ms statement timeout and 1,000-row result cap enforced prior to running any query.
+7. **Formula Injection Sanitization:** CSV exports prefix formula triggers (`=`, `+`, `-`, `@`, `\t`, `\r`) with single quotes `'`.
+8. **No Data Leakage to LLM:** LLM prompts consume only column names, inferred types, and minimal non-sensitive category values. Uploaded row data is never transmitted to external providers.
