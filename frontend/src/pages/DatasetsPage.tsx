@@ -65,7 +65,8 @@ export const DatasetsPage: React.FC = () => {
         <button
           onClick={fetchDatasets}
           disabled={loading}
-          className="inline-flex items-center space-x-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 bg-white border border-slate-200 px-3 py-1.5 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50 self-start sm:self-auto"
+          aria-label="Refresh datasets list"
+          className="inline-flex items-center space-x-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 bg-white border border-slate-200 px-3 py-1.5 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50 self-start sm:self-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           <span>Refresh</span>
@@ -74,14 +75,15 @@ export const DatasetsPage: React.FC = () => {
 
       {/* Notifications */}
       {successMessage && (
-        <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-lg text-xs flex items-center justify-between">
+        <div role="status" aria-live="polite" className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-lg text-xs flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             <span className="font-medium">{successMessage}</span>
           </div>
           <button
             onClick={() => setSuccessMessage(null)}
-            className="text-emerald-600 hover:text-emerald-900 text-xs font-semibold"
+            aria-label="Dismiss notification"
+            className="text-emerald-600 hover:text-emerald-900 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 rounded px-1"
           >
             Dismiss
           </button>
@@ -89,7 +91,7 @@ export const DatasetsPage: React.FC = () => {
       )}
 
       {error && (
-        <div className="bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-lg text-xs flex items-center space-x-2">
+        <div role="alert" aria-live="assertive" className="bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-lg text-xs flex items-center space-x-2">
           <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
           <span>{error}</span>
         </div>

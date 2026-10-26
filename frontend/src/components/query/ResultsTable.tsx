@@ -61,7 +61,7 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
           Query executed successfully, but returned 0 matching records.
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div tabIndex={0} role="region" aria-label="Query results table" className="overflow-x-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="bg-slate-100/75 border-b border-slate-200 text-slate-700 font-semibold uppercase tracking-wider text-[11px]">
@@ -112,7 +112,7 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
             <button
               onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
               disabled={currentPage === 1}
-              className="p-1 rounded hover:bg-slate-200 disabled:opacity-40 disabled:hover:bg-transparent"
+              className="p-1 rounded hover:bg-slate-200 disabled:opacity-40 disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
               aria-label="Previous page"
             >
               <ChevronLeft className="w-4 h-4" />
@@ -123,7 +123,7 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
             <button
               onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
               disabled={currentPage === totalPages}
-              className="p-1 rounded hover:bg-slate-200 disabled:opacity-40 disabled:hover:bg-transparent"
+              className="p-1 rounded hover:bg-slate-200 disabled:opacity-40 disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
               aria-label="Next page"
             >
               <ChevronRight className="w-4 h-4" />

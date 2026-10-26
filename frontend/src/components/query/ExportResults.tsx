@@ -13,7 +13,7 @@ export const ExportResults: React.FC<ExportResultsProps> = ({ queryId }) => {
     <a
       href={exportUrl}
       download
-      className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 hover:text-slate-900 shadow-sm transition-colors"
+      className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 hover:text-slate-900 shadow-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
       title="Download query results as CSV"
       aria-label="Export results to CSV"
     >

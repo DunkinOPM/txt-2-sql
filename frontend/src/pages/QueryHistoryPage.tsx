@@ -121,7 +121,7 @@ export const QueryHistoryPage: React.FC = () => {
           {/* Search bar */}
           <form onSubmit={handleSearchSubmit} className="relative md:col-span-2">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
+            <input aria-label="Search past queries"
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -132,10 +132,10 @@ export const QueryHistoryPage: React.FC = () => {
 
           {/* Dataset Selector */}
           <div className="relative">
-            <select
+            <select aria-label="Filter by dataset"
               value={selectedDatasetId}
               onChange={(e) => handleDatasetChange(e.target.value)}
-              className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500"
+              className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
             >
               <option value="">All Datasets</option>
               {datasets.map((d) => (
@@ -166,8 +166,8 @@ export const QueryHistoryPage: React.FC = () => {
               onClick={() => handleStatusChange(pill.value)}
               className={`text-xs px-2.5 py-1 rounded-lg font-medium whitespace-nowrap transition-colors ${
                 selectedStatus === pill.value
-                  ? 'bg-brand-600 text-white shadow-2xs'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  ? 'bg-brand-600 text-white shadow-2xs focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500'
               }`}
             >
               {pill.label}
@@ -182,7 +182,7 @@ export const QueryHistoryPage: React.FC = () => {
                 setSearchQuery('');
                 setPage(1);
               }}
-              className="text-[11px] text-rose-600 hover:text-rose-800 font-semibold px-2 py-1 ml-auto shrink-0 flex items-center space-x-1"
+              className="text-[11px] text-rose-600 hover:text-rose-800 font-semibold px-2 py-1 ml-auto shrink-0 flex items-center space-x-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 rounded"
             >
               <RotateCcw className="w-3 h-3" />
               <span>Reset Filters</span>
@@ -193,7 +193,7 @@ export const QueryHistoryPage: React.FC = () => {
 
       {/* Error Alert */}
       {error && (
-        <div className="bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-xl text-xs flex items-center space-x-2">
+        <div role="alert" aria-live="assertive" className="bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-xl text-xs flex items-center space-x-2">
           <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
           <span>{error}</span>
         </div>
@@ -219,7 +219,7 @@ export const QueryHistoryPage: React.FC = () => {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div tabIndex={0} role="region" aria-label="Query history records table" className="overflow-x-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
             <table className="w-full text-left text-xs text-slate-600 border-collapse">
               <thead>
                 <tr className="bg-slate-50/80 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
@@ -284,7 +284,7 @@ export const QueryHistoryPage: React.FC = () => {
                           e.stopPropagation();
                           setInspectingQueryId(q.id);
                         }}
-                        className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold transition-colors"
+                        className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                       >
                         <Eye className="w-3 h-3" />
                         <span>Inspect</span>
@@ -297,7 +297,7 @@ export const QueryHistoryPage: React.FC = () => {
                             e.stopPropagation();
                             navigate(`/?query_id=${q.id}`);
                           }}
-                          className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-md bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-semibold shadow-2xs transition-colors"
+                          className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-md bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-semibold shadow-2xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
                         >
                           <span>Resume</span>
                           <ArrowRight className="w-3 h-3" />
@@ -324,7 +324,7 @@ export const QueryHistoryPage: React.FC = () => {
                 type="button"
                 disabled={page <= 1}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
-                className="p-1 rounded-md border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="p-1 rounded-md border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                 aria-label="Previous page"
               >
                 <ChevronLeft className="w-4 h-4" />
@@ -336,7 +336,7 @@ export const QueryHistoryPage: React.FC = () => {
                 type="button"
                 disabled={page >= totalPages}
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                className="p-1 rounded-md border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="p-1 rounded-md border border-slate-200 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
                 aria-label="Next page"
               >
                 <ChevronRight className="w-4 h-4" />

@@ -273,7 +273,7 @@ def create_and_classify_query(
         db.commit()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"error_code": "WORKFLOW_FAILED", "message": f"Query workflow failed: {str(e)}"}
+            detail={"error_code": "WORKFLOW_FAILED", "message": "Query processing workflow failed. Please try again later."}
         )
 
     # 4. Apply final state and persist Turn 2
@@ -467,7 +467,7 @@ def execute_ready_query(
         db.commit()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"error_code": "SQL_EXECUTION_PIPELINE_FAILED", "message": f"SQL execution failed: {str(e)}"}
+            detail={"error_code": "SQL_EXECUTION_PIPELINE_FAILED", "message": "SQL execution pipeline encountered an unexpected error. Please try again later."}
         )
 
     next_turn_no = len(query_record.turns) + 1

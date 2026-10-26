@@ -16,6 +16,7 @@ import { ChatMessage } from './ChatMessage';
 import { SQLViewer } from './SQLViewer';
 import { ResultsTable } from './ResultsTable';
 import { ExportResults } from './ExportResults';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 interface HistoryDetailModalProps {
   queryId: string | null;
@@ -27,6 +28,10 @@ export const HistoryDetailModal: React.FC<HistoryDetailModalProps> = ({ queryId,
   const [query, setQuery] = useState<QueryResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const modalRef = useFocusTrap<HTMLDivElement>({
+    isOpen: Boolean(queryId),
+    onClose,
+  });
 
   useEffect(() => {
     if (!queryId) {
@@ -63,36 +68,47 @@ export const HistoryDetailModal: React.FC<HistoryDetailModalProps> = ({ queryId,
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="history-modal-title"
+      ref={modalRef}
+      tabIndex={-1}
+      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 focus-visible:outline-hidden"
+    >
       <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/50 shrink-0">
           <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center" aria-hidden="true">
               <Sparkles className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-slate-900">Query Details</h3>
+              <h3 id="history-modal-title" className="text-sm font-bold text-slate-900">
+                Query Details
+              </h3>
               <p className="text-[11px] text-slate-500 font-mono">ID: {queryId}</p>
             </div>
           </div>
           <div className="flex items-center space-x-2">
             {query && (
               <button
+                type="button"
                 onClick={handleOpenInWorkspace}
-                className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors"
+                className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-500"
                 title="Open in conversational workspace"
               >
                 <span>{query.status === 'awaiting_clarification' ? 'Resume in Workspace' : 'Open in Workspace'}</span>
-                <ExternalLink className="w-3.5 h-3.5" />
+                <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
             )}
             <button
+              type="button"
               onClick={onClose}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
-              aria-label="Close modal"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-500"
+              aria-label="Close modal dialog"
             >
-              <X className="w-5 h-5" />
+              <X className="w-5 h-5" aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -100,15 +116,19 @@ export const HistoryDetailModal: React.FC<HistoryDetailModalProps> = ({ queryId,
         {/* Content Body */}
         <div className="p-6 overflow-y-auto space-y-6 flex-1">
           {loading && (
-            <div className="py-16 text-center space-y-3">
-              <Loader2 className="w-8 h-8 text-brand-600 animate-spin mx-auto" />
+            <div className="py-16 text-center space-y-3" role="status" aria-live="polite">
+              <Loader2 className="w-8 h-8 text-brand-600 animate-spin mx-auto" aria-hidden="true" />
               <p className="text-xs text-slate-500 font-medium">Loading query details...</p>
             </div>
           )}
 
           {error && (
-            <div className="bg-rose-50 border border-rose-200 text-rose-700 p-4 rounded-xl text-xs flex items-center space-x-3">
-              <AlertCircle className="w-5 h-5 text-rose-500 shrink-0" />
+            <div
+              role="alert"
+              aria-live="assertive"
+              className="bg-rose-50 border border-rose-200 text-rose-700 p-4 rounded-xl text-xs flex items-center space-x-3"
+            >
+              <AlertCircle className="w-5 h-5 text-rose-500 shrink-0" aria-hidden="true" />
               <span>{error}</span>
             </div>
           )}
@@ -128,7 +148,7 @@ export const HistoryDetailModal: React.FC<HistoryDetailModalProps> = ({ queryId,
                     Created At
                   </span>
                   <span className="inline-flex items-center text-slate-700 font-medium">
-                    <Calendar className="w-3.5 h-3.5 mr-1 text-slate-400" />
+                    <Calendar className="w-3.5 h-3.5 mr-1 text-slate-400" aria-hidden="true" />
                     {new Date(query.created_at).toLocaleString()}
                   </span>
                 </div>
@@ -137,7 +157,7 @@ export const HistoryDetailModal: React.FC<HistoryDetailModalProps> = ({ queryId,
                     Duration
                   </span>
                   <span className="inline-flex items-center text-slate-700 font-medium">
-                    <Clock className="w-3.5 h-3.5 mr-1 text-slate-400" />
+                    <Clock className="w-3.5 h-3.5 mr-1 text-slate-400" aria-hidden="true" />
                     {query.execution_duration_ms !== null ? `${query.execution_duration_ms}ms` : '—'}
                   </span>
                 </div>
@@ -157,7 +177,7 @@ export const HistoryDetailModal: React.FC<HistoryDetailModalProps> = ({ queryId,
                   Original Question
                 </span>
                 <div className="bg-white border border-slate-200 rounded-xl p-3.5 text-xs text-slate-800 font-medium">
-                  "{query.original_question}"
+                  &ldquo;{query.original_question}&rdquo;
                 </div>
               </div>
 
@@ -167,7 +187,7 @@ export const HistoryDetailModal: React.FC<HistoryDetailModalProps> = ({ queryId,
                     Refined Question (Post-Clarification)
                   </span>
                   <div className="bg-amber-50/50 border border-amber-200 rounded-xl p-3.5 text-xs text-amber-900 font-medium">
-                    "{query.refined_question}"
+                    &ldquo;{query.refined_question}&rdquo;
                   </div>
                 </div>
               )}
@@ -219,9 +239,12 @@ export const HistoryDetailModal: React.FC<HistoryDetailModalProps> = ({ queryId,
 
               {/* Error Code Notice if Failed or Rejected */}
               {(query.status === 'failed' || query.status === 'rejected') && (
-                <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 text-xs text-rose-800 space-y-1">
+                <div
+                  role="alert"
+                  className="bg-rose-50 border border-rose-200 rounded-xl p-4 text-xs text-rose-800 space-y-1"
+                >
                   <div className="font-bold flex items-center space-x-1.5">
-                    <AlertCircle className="w-4 h-4 text-rose-600" />
+                    <AlertCircle className="w-4 h-4 text-rose-600" aria-hidden="true" />
                     <span>
                       {query.status === 'rejected' ? 'Request Rejected: ' : 'Error Code: '}
                       {query.error_code || (query.status === 'rejected' ? 'REJECTED' : 'QUERY_FAILED')}

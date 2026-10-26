@@ -80,14 +80,14 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
         <div className="flex items-center space-x-1.5">
           <button
             onClick={() => onInspectSchema(dataset)}
-            className="flex items-center space-x-1 text-xs font-medium text-slate-700 hover:text-brand-600 bg-white hover:bg-slate-100 px-2.5 py-1.5 rounded-md border border-slate-200 transition-colors"
+            className="flex items-center space-x-1 text-xs font-medium text-slate-700 hover:text-brand-600 bg-white hover:bg-slate-100 px-2.5 py-1.5 rounded-md border border-slate-200 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
           >
             <Table className="w-3.5 h-3.5" />
             <span>Schema</span>
           </button>
           <button
             onClick={() => onPreviewData(dataset)}
-            className="flex items-center space-x-1 text-xs font-medium text-slate-700 hover:text-brand-600 bg-white hover:bg-slate-100 px-2.5 py-1.5 rounded-md border border-slate-200 transition-colors"
+            className="flex items-center space-x-1 text-xs font-medium text-slate-700 hover:text-brand-600 bg-white hover:bg-slate-100 px-2.5 py-1.5 rounded-md border border-slate-200 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
           >
             <Eye className="w-3.5 h-3.5" />
             <span>Preview</span>
@@ -97,7 +97,8 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({
         <button
           onClick={() => onDelete(dataset)}
           title="Delete dataset"
-          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors"
+          aria-label={`Delete ${dataset.display_name}`}
+          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
         >
           <Trash2 className="w-4 h-4" />
         </button>

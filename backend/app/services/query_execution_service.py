@@ -47,13 +47,16 @@ def _serialize_cell_value(val: Any) -> Any:
 def sanitize_csv_cell(val: Any) -> str:
     """
     Sanitizes values for CSV export, neutralizing formula injection attacks.
-    If value begins with =, +, -, @, \\t, or \\r, prepends a single quote.
+    If value begins with =, +, -, @, \t, or \r (or after leading spaces), prepends a single quote.
     """
     if val is None:
         return ""
     s = str(val)
     if s.startswith(FORMULA_PREFIXES):
         return f"'{s}"
+    s_lstrip = s.lstrip()
+    if s_lstrip.startswith(FORMULA_PREFIXES):
+        return f"'{s_lstrip}"
     return s
 
 
