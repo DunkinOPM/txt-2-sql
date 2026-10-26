@@ -8,26 +8,36 @@ import {
 } from '../types/api';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+const DEFAULT_USER_ID = 'default_user';
 
 class ApiClient {
   private baseUrl: string;
+  private currentUserId: string = DEFAULT_USER_ID;
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl;
+  }
+
+  public setUserId(userId: string) {
+    this.currentUserId = userId;
+  }
+
+  public getUserId(): string {
+    return this.currentUserId;
   }
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
     const headers = new Headers(options.headers || {});
 
-    // Only set application/json if body is not FormData
-    if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
-      headers.set('Content-Type', 'application/json');
+    // Ensure session identity header is attached
+    if (!headers.has('X-User-ID')) {
+      headers.set('X-User-ID', this.currentUserId);
     }
 
-    // Include development user header for local development session context
-    if (!headers.has('X-User-ID')) {
-      headers.set('X-User-ID', 'default_user');
+    // Default to JSON unless sending FormData
+    if (!(options.body instanceof FormData) && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
     }
 
     const response = await fetch(url, {
@@ -36,17 +46,13 @@ class ApiClient {
     });
 
     if (!response.ok) {
-      let errorMessage = `HTTP error ${response.status}: ${response.statusText}`;
+      let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
       try {
         const errorData = await response.json();
-        if (errorData && errorData.message) {
+        if (errorData.message) {
           errorMessage = errorData.message;
-        } else if (errorData && errorData.detail) {
-          if (typeof errorData.detail === 'string') {
-            errorMessage = errorData.detail;
-          } else if (errorData.detail.message) {
-            errorMessage = errorData.detail.message;
-          }
+        } else if (errorData.detail) {
+          errorMessage = typeof errorData.detail === 'string' ? errorData.detail : JSON.stringify(errorData.detail);
         }
       } catch {
         // Fallback to generic message
@@ -94,7 +100,7 @@ class ApiClient {
     });
   }
 
-  // Queries (Phase 3)
+  // Queries (Phase 3 & 4)
   public async createQuery(datasetId: string, question: string): Promise<QueryResponse> {
     return this.request<QueryResponse>('/api/queries', {
       method: 'POST',
@@ -116,8 +122,18 @@ class ApiClient {
     });
   }
 
+  public async executeQuery(queryId: string): Promise<QueryResponse> {
+    return this.request<QueryResponse>(`/api/queries/${queryId}/execute`, {
+      method: 'POST',
+    });
+  }
+
   public async getQuery(queryId: string): Promise<QueryResponse> {
     return this.request<QueryResponse>(`/api/queries/${queryId}`);
+  }
+
+  public getExportUrl(queryId: string): string {
+    return `${this.baseUrl}/api/queries/${queryId}/export`;
   }
 }
 

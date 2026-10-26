@@ -1,5 +1,5 @@
 import uuid
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -12,8 +12,10 @@ from app.schemas.query import (
 from app.services.query_service import (
     create_and_classify_query,
     submit_clarification_answer,
+    execute_ready_query,
     get_query_status,
 )
+from app.services.query_execution_service import export_rows_to_safe_csv
 
 router = APIRouter(prefix="/api/queries", tags=["queries"])
 
@@ -26,7 +28,8 @@ def submit_query(
 ):
     """
     Submits a natural language question against an authorized dataset.
-    Runs initial deterministic safety checks and LangGraph classification.
+    Runs initial deterministic safety checks, LangGraph classification, and
+    executes clear queries through read-only SQL generation and execution.
     """
     return create_and_classify_query(
         db=db,
@@ -55,6 +58,23 @@ def submit_clarification(
     )
 
 
+@router.post("/{query_id}/execute", response_model=QueryResponse)
+def execute_query(
+    query_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    owner_id: str = Depends(get_current_owner_id),
+):
+    """
+    Explicitly triggers canonical SQL generation, validation, and read-only execution
+    for a query in 'ready_for_sql' state. Prevents duplicate concurrent executions.
+    """
+    return execute_ready_query(
+        db=db,
+        owner_id=owner_id,
+        query_id=query_id,
+    )
+
+
 @router.get("/{query_id}", response_model=QueryResponse)
 def get_query(
     query_id: uuid.UUID,
@@ -62,10 +82,40 @@ def get_query(
     owner_id: str = Depends(get_current_owner_id),
 ):
     """
-    Retrieves the query details, status, and conversation turns for an authorized owner.
+    Retrieves the query details, status, conversation turns, SQL, explanation, and results.
     """
     return get_query_status(
         db=db,
         owner_id=owner_id,
         query_id=query_id,
+    )
+
+
+@router.get("/{query_id}/export")
+def export_query_results(
+    query_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    owner_id: str = Depends(get_current_owner_id),
+):
+    """
+    Exports completed query results as an RFC 4180 CSV file with
+    protection against spreadsheet formula injection attacks.
+    """
+    query_data = get_query_status(db=db, owner_id=owner_id, query_id=query_id)
+    if query_data.status != "completed" or not query_data.columns:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error_code": "NO_RESULTS_TO_EXPORT", "message": "Query has no completed results to export."}
+        )
+
+    csv_content = export_rows_to_safe_csv(
+        columns=query_data.columns,
+        rows=query_data.rows or [],
+    )
+
+    filename = f"query_{str(query_id)[:8]}_results.csv"
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )

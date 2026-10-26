@@ -125,6 +125,8 @@ class AppQuery(Base):
     status = Column(String, nullable=False)
     generated_sql = Column(String, nullable=True)
     explanation = Column(String, nullable=True)
+    result_columns = Column(JSONB, nullable=True)
+    result_rows = Column(JSONB, nullable=True)
     result_row_count = Column(BigInteger, nullable=True)
     execution_duration_ms = Column(Integer, nullable=True)
     error_code = Column(String, nullable=True)

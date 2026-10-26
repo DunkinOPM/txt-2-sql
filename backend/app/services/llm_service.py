@@ -16,11 +16,6 @@ SQL_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
 SQL_LINE_COMMENT_RE = re.compile(r"--[^\r\n]*")
 
 # Deterministic patterns for safety & prompt injection.
-# Note: Deterministic regex checks serve as defense-in-depth pre-filters.
-# They catch blatant, known, and common obfuscated attacks, but do not claim
-# to catch every possible adversarial attack. Robust safety is additionally
-# reinforced by prompt boundaries, structured schema validation, and complete
-# prohibition of SQL generation/execution in this phase.
 UNSAFE_SQL_PATTERNS = [
     re.compile(
         r"\b(drop\s+(table|database|schema|view|index|user|role)|"
@@ -82,7 +77,6 @@ def check_deterministic_safety(question: str) -> Optional[ClassificationResult]:
     Strips inline and block comments to catch obfuscated keywords (e.g. DROP/**/TABLE),
     mutating SQL statements, and prompt injection attempts.
     """
-    # De-obfuscate comments by replacing them with a space
     deobfuscated = SQL_BLOCK_COMMENT_RE.sub(" ", question)
     deobfuscated = SQL_LINE_COMMENT_RE.sub(" ", deobfuscated)
     q = " ".join(deobfuscated.split()).strip()
@@ -144,6 +138,9 @@ def _format_schema_for_prompt(dataset_name: str, schema_summary: list[dict[str, 
 # Global hooks for test mocking
 _mock_classifier_handler = None
 _mock_rewriter_handler = None
+_mock_sql_generator_handler = None
+_mock_sql_repairer_handler = None
+_mock_explanation_handler = None
 
 
 def set_mock_classifier(handler):
@@ -156,6 +153,21 @@ def set_mock_rewriter(handler):
     _mock_rewriter_handler = handler
 
 
+def set_mock_sql_generator(handler):
+    global _mock_sql_generator_handler
+    _mock_sql_generator_handler = handler
+
+
+def set_mock_sql_repairer(handler):
+    global _mock_sql_repairer_handler
+    _mock_sql_repairer_handler = handler
+
+
+def set_mock_explanation(handler):
+    global _mock_explanation_handler
+    _mock_explanation_handler = handler
+
+
 def classify_query_with_gemini(
     dataset_name: str,
     schema_summary: list[dict[str, Any]],
@@ -166,17 +178,14 @@ def classify_query_with_gemini(
     Classifies a natural-language question against an authorized dataset schema
     using Gemini with Pydantic structured output validation.
     """
-    # 1. Deterministic safety check first
     safety_override = check_deterministic_safety(question)
     if safety_override:
         return safety_override
 
-    # 2. Call handler or Gemini API with robust error handling
     try:
         if _mock_classifier_handler is not None:
             return _mock_classifier_handler(dataset_name, schema_summary, question, previous_clarifications)
 
-        # Format minimal schema context
         schema_context = _format_schema_for_prompt(dataset_name, schema_summary)
 
         clarification_context = ""
@@ -295,3 +304,174 @@ def rewrite_query_with_gemini(
     except Exception as e:
         logger.warning(f"Failed to rewrite query via Gemini: {e}")
         return f"{original_question} ({user_answer})"
+
+
+def generate_sql_with_gemini(
+    dataset_name: str,
+    table_name: str,
+    columns: list[dict[str, Any]],
+    question: str,
+) -> str:
+    """
+    Generates a PostgreSQL SELECT query for the specified question and authorized dataset schema.
+    """
+    try:
+        if _mock_sql_generator_handler is not None:
+            return _mock_sql_generator_handler(dataset_name, table_name, columns, question)
+
+        api_key = settings.gemini_api_key
+        if not api_key or api_key == "placeholder_key":
+            # Fallback SQL for placeholder dev environment
+            first_col = columns[0]["internal_name"] if columns else "*"
+            return f"SELECT {first_col} FROM uploaded_data.{table_name} LIMIT 10"
+
+        col_lines = []
+        for c in columns:
+            orig = c.get("original_name")
+            internal = c.get("internal_name")
+            itype = c.get("inferred_type", "TEXT")
+            col_lines.append(f"- '{orig}' (Type: {itype}) -> SQL column name: {internal}")
+
+        cols_str = "\n".join(col_lines)
+
+        system_instruction = (
+            "You are a specialized Text-to-SQL generation assistant.\n"
+            "Your task is to write a single, clean PostgreSQL SELECT query that accurately answers the user's question.\n"
+            "CRITICAL RULES:\n"
+            f"1. You MUST query from the table: uploaded_data.{table_name}\n"
+            "2. Use ONLY the listed internal SQL column names in SELECT, WHERE, ORDER BY, GROUP BY.\n"
+            "3. Exactly one SELECT statement is allowed. Do NOT generate multiple statements.\n"
+            "4. NEVER generate mutations (INSERT, UPDATE, DELETE, MERGE) or DDL (DROP, ALTER, CREATE).\n"
+            "5. Do NOT include comments (-- or /* */) or markdown formatting. Output raw SQL only."
+        )
+
+        prompt = (
+            f"Dataset Name: '{dataset_name}'\n"
+            f"Authorized Target Table: uploaded_data.{table_name}\n"
+            "Available Columns in this table:\n"
+            f"{cols_str}\n\n"
+            f"User Question: \"{question}\"\n\n"
+            "Write the PostgreSQL query that answers this question. Output ONLY the raw SQL query:"
+        )
+
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                temperature=0.0,
+            ),
+        )
+
+        sql_text = response.text.strip() if response.text else ""
+        # Strip any markdown code fences if present
+        sql_text = re.sub(r"^```(?:sql)?\s*", "", sql_text, flags=re.IGNORECASE)
+        sql_text = re.sub(r"\s*```$", "", sql_text)
+        return sql_text.strip()
+
+    except Exception as e:
+        logger.error(f"Error generating SQL with Gemini: {str(e)}")
+        raise
+
+
+def repair_sql_with_gemini(
+    dataset_name: str,
+    table_name: str,
+    columns: list[dict[str, Any]],
+    question: str,
+    failed_sql: str,
+    error_message: str,
+    attempt: int,
+) -> str:
+    """
+    Prompts Gemini to repair a candidate SQL query that failed AST validation or database execution.
+    """
+    try:
+        if _mock_sql_repairer_handler is not None:
+            return _mock_sql_repairer_handler(dataset_name, table_name, columns, question, failed_sql, error_message, attempt)
+
+        api_key = settings.gemini_api_key
+        if not api_key or api_key == "placeholder_key":
+            return failed_sql
+
+        col_lines = [
+            f"- '{c.get('original_name')}' -> SQL column: {c.get('internal_name')} ({c.get('inferred_type')})"
+            for c in columns
+        ]
+        cols_str = "\n".join(col_lines)
+
+        system_instruction = (
+            "You are a SQL repair assistant. A previously generated SQL query failed validation or execution.\n"
+            "Your task is to fix the query so that it successfully parses and executes on PostgreSQL.\n"
+            f"You MUST query strictly from uploaded_data.{table_name}.\n"
+            "Output ONLY the corrected raw SQL statement without markdown fences."
+        )
+
+        prompt = (
+            f"User Question: \"{question}\"\n"
+            f"Target Table: uploaded_data.{table_name}\n"
+            "Authorized Columns:\n"
+            f"{cols_str}\n\n"
+            f"Failed SQL:\n{failed_sql}\n\n"
+            f"Error Message:\n{error_message}\n\n"
+            f"Repair Attempt: {attempt} of 2.\n"
+            "Correct the SQL query to resolve this error. Output ONLY the raw SQL:"
+        )
+
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                temperature=0.0,
+            ),
+        )
+
+        sql_text = response.text.strip() if response.text else ""
+        sql_text = re.sub(r"^```(?:sql)?\s*", "", sql_text, flags=re.IGNORECASE)
+        sql_text = re.sub(r"\s*```$", "", sql_text)
+        return sql_text.strip()
+
+    except Exception as e:
+        logger.error(f"Error repairing SQL with Gemini: {str(e)}")
+        raise
+
+
+def generate_explanation_with_gemini(
+    question: str,
+    generated_sql: str,
+    row_count: int,
+) -> str:
+    """
+    Generates a concise, user-friendly 1-2 sentence explanation of the executed query and results.
+    """
+    try:
+        if _mock_explanation_handler is not None:
+            return _mock_explanation_handler(question, generated_sql, row_count)
+
+        api_key = settings.gemini_api_key
+        if not api_key or api_key == "placeholder_key":
+            return f"Retrieved {row_count} matching record(s) based on your query."
+
+        prompt = (
+            f"Question: \"{question}\"\n"
+            f"Executed SQL: \"{generated_sql}\"\n"
+            f"Records Retrieved: {row_count}\n\n"
+            "Provide a concise, helpful 1-2 sentence natural language explanation of the results "
+            "and what filters/calculations were applied. Do not include raw code or jargon."
+        )
+
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(temperature=0.0),
+        )
+        explanation = response.text.strip() if response.text else ""
+        return explanation or f"Retrieved {row_count} matching record(s) based on your query."
+
+    except Exception as e:
+        logger.warning(f"Error generating explanation with Gemini: {e}")
+        return f"Retrieved {row_count} matching record(s) based on your query."
