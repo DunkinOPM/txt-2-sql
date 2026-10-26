@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, File, UploadFile, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.rate_limiter import rate_limit_upload
 from app.api.deps import get_current_owner_id
 from app.schemas.query import SuggestedQuestionsResponse
 from app.services.query_service import get_suggested_questions
@@ -26,7 +27,12 @@ from app.services.dataset_service import (
 router = APIRouter(prefix="/api/datasets", tags=["datasets"])
 
 
-@router.post("", response_model=DatasetSummaryResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=DatasetSummaryResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(rate_limit_upload)],
+)
 async def upload_dataset(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -36,6 +42,7 @@ async def upload_dataset(
     Upload and import a CSV or XLSX dataset.
     Validates file boundaries, normalizes column headers, infers data types,
     creates a physical table in schema 'uploaded_data', and registers metadata.
+    Enforces upload rate limits per client.
     """
     df, raw_headers, clean_filename, file_format = await validate_and_parse_upload(file)
 
@@ -111,6 +118,8 @@ def delete_dataset(
     Delete an authorized dataset, dropping its dynamic table and cascading metadata.
     """
     return delete_authorized_dataset(db, dataset_id, owner_id)
+
+
 @router.get("/{dataset_id}/suggested-questions", response_model=SuggestedQuestionsResponse)
 def get_dataset_suggested_questions(
     dataset_id: uuid.UUID,

@@ -7,34 +7,53 @@ import {
   QueryResponse,
   QueryHistoryListResponse,
   SuggestedQuestionsResponse,
+  User,
+  TokenResponse,
+  RegisterPayload,
+  LoginPayload,
 } from '../types/api';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
-const DEFAULT_USER_ID = 'default_user';
 
 class ApiClient {
   private baseUrl: string;
-  private currentUserId: string = DEFAULT_USER_ID;
+  private token: string | null = null;
+  private onUnauthorizedCallback?: () => void;
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl;
+    // Restore session token from sessionStorage (cleared on browser/tab close)
+    if (typeof window !== 'undefined') {
+      this.token = sessionStorage.getItem('txt2sql_token');
+    }
   }
 
-  public setUserId(userId: string) {
-    this.currentUserId = userId;
+  public setToken(token: string | null) {
+    this.token = token;
+    if (typeof window !== 'undefined') {
+      if (token) {
+        sessionStorage.setItem('txt2sql_token', token);
+      } else {
+        sessionStorage.removeItem('txt2sql_token');
+      }
+    }
   }
 
-  public getUserId(): string {
-    return this.currentUserId;
+  public getToken(): string | null {
+    return this.token;
+  }
+
+  public onUnauthorized(callback: () => void) {
+    this.onUnauthorizedCallback = callback;
   }
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
     const headers = new Headers(options.headers || {});
 
-    // Ensure session identity header is attached
-    if (!headers.has('X-User-ID')) {
-      headers.set('X-User-ID', this.currentUserId);
+    // Attach Bearer token if present
+    if (this.token && !headers.has('Authorization')) {
+      headers.set('Authorization', `Bearer ${this.token}`);
     }
 
     // Default to JSON unless sending FormData
@@ -45,9 +64,14 @@ class ApiClient {
     const response = await fetch(url, {
       ...options,
       headers,
+      credentials: 'same-origin',
     });
 
     if (!response.ok) {
+      if (response.status === 401 && this.onUnauthorizedCallback) {
+        this.onUnauthorizedCallback();
+      }
+
       let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
       try {
         const errorData = await response.json();
@@ -63,6 +87,40 @@ class ApiClient {
     }
 
     return response.json();
+  }
+
+  // Auth (Phase 7)
+  public async register(payload: RegisterPayload): Promise<TokenResponse> {
+    const res = await this.request<TokenResponse>('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    this.setToken(res.access_token);
+    return res;
+  }
+
+  public async login(payload: LoginPayload): Promise<TokenResponse> {
+    const res = await this.request<TokenResponse>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    this.setToken(res.access_token);
+    return res;
+  }
+
+  public async getCurrentUser(): Promise<User> {
+    return this.request<User>('/api/auth/me');
+  }
+
+  public async logout(): Promise<{ message: string }> {
+    try {
+      const res = await this.request<{ message: string }>('/api/auth/logout', {
+        method: 'POST',
+      });
+      return res;
+    } finally {
+      this.setToken(null);
+    }
   }
 
   // Health

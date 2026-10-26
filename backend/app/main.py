@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.api.health import router as health_router
+from app.api.auth import router as auth_router
 from app.api.datasets import router as datasets_router
 from app.api.queries import router as queries_router
 
@@ -19,18 +20,12 @@ app = FastAPI(
     version="0.1.0"
 )
 
-# CORS Middleware
-origins = [
-    settings.frontend_origin,
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-]
-
+# CORS Middleware with explicit origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=settings.allowed_origins_list,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -73,10 +68,13 @@ async def http_exception_handler(request: Request, exc: HTTPException):
             "message": str(exc.detail),
             "request_id": request_id
         }
+    headers = {"X-Request-ID": request_id}
+    if exc.headers:
+        headers.update(exc.headers)
     return JSONResponse(
         status_code=exc.status_code,
         content=content,
-        headers={"X-Request-ID": request_id}
+        headers=headers
     )
 
 
@@ -97,6 +95,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 # Include Routers
 app.include_router(health_router)
+app.include_router(auth_router)
 app.include_router(datasets_router)
 app.include_router(queries_router)
 
