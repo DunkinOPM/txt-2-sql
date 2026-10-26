@@ -104,7 +104,7 @@ class AppQuery(Base):
             name="chk_query_category"
         ),
         CheckConstraint(
-            "status IN ('classifying', 'awaiting_clarification', 'generating_sql', 'validating_sql', 'executing', 'completed', 'rejected', 'failed')",
+            "status IN ('classifying', 'awaiting_clarification', 'ready_for_sql', 'generating_sql', 'validating_sql', 'executing', 'completed', 'rejected', 'failed')",
             name="chk_query_status"
         ),
         Index("idx_app_queries_owner_created", "owner_id", text("created_at DESC")),
@@ -159,7 +159,7 @@ class AppQueryTurn(Base):
     role = Column(String, nullable=False)
     turn_type = Column(String, nullable=False)
     content = Column(String, nullable=False)
+    clarification_options = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=text("NOW()"))
 
     query = relationship("AppQuery", back_populates="turns")
-
