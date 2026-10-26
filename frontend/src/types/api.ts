@@ -66,3 +66,29 @@ export interface DatasetDeleteResult {
   message: string;
   deleted: boolean;
 }
+
+export interface QueryTurn {
+  id: string;
+  turn_number: number;
+  role: 'user' | 'assistant' | 'system';
+  turn_type: 'question' | 'clarification' | 'clarification_answer' | 'status' | 'explanation';
+  content: string;
+  created_at: string;
+}
+
+export interface QueryResponse {
+  id: string;
+  dataset_id: string;
+  original_question: string;
+  refined_question?: string | null;
+  category?: 'RELEVANT_CLEAR' | 'RELEVANT_AMBIGUOUS' | 'RELEVANT_UNANSWERABLE' | 'OUT_OF_SCOPE' | 'NONSENSICAL' | 'IMPROPER_OR_UNSAFE' | null;
+  status: 'classifying' | 'awaiting_clarification' | 'ready_for_sql' | 'generating_sql' | 'validating_sql' | 'executing' | 'completed' | 'rejected' | 'failed';
+  assistant_message: string;
+  clarification_question?: string | null;
+  clarification_options?: string[] | null;
+  turns: QueryTurn[];
+  created_at: string;
+  updated_at: string;
+  error_code?: string | null;
+  error_message?: string | null;
+}

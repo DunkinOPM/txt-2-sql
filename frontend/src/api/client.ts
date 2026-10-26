@@ -4,6 +4,7 @@ import {
   DatasetSchema,
   DatasetPreview,
   DatasetDeleteResult,
+  QueryResponse,
 } from '../types/api';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
@@ -91,6 +92,32 @@ class ApiClient {
     return this.request<DatasetDeleteResult>(`/api/datasets/${datasetId}`, {
       method: 'DELETE',
     });
+  }
+
+  // Queries (Phase 3)
+  public async createQuery(datasetId: string, question: string): Promise<QueryResponse> {
+    return this.request<QueryResponse>('/api/queries', {
+      method: 'POST',
+      body: JSON.stringify({ dataset_id: datasetId, question }),
+    });
+  }
+
+  public async submitClarification(
+    queryId: string,
+    selectedOption?: string,
+    freeTextAnswer?: string
+  ): Promise<QueryResponse> {
+    return this.request<QueryResponse>(`/api/queries/${queryId}/clarifications`, {
+      method: 'POST',
+      body: JSON.stringify({
+        selected_option: selectedOption || null,
+        free_text_answer: freeTextAnswer || null,
+      }),
+    });
+  }
+
+  public async getQuery(queryId: string): Promise<QueryResponse> {
+    return this.request<QueryResponse>(`/api/queries/${queryId}`);
   }
 }
 

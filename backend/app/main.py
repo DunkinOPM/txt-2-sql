@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.api.health import router as health_router
 from app.api.datasets import router as datasets_router
+from app.api.queries import router as queries_router
 
 app = FastAPI(
     title="Clarification-Driven Conversational Text-to-SQL API",
@@ -92,6 +93,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 # Include Routers
 app.include_router(health_router)
 app.include_router(datasets_router)
+app.include_router(queries_router)
 
 
 @app.get("/")
