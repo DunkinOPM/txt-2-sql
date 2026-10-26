@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { X, Table, Loader2, AlertCircle, Shield } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import { DatasetSummary, DatasetSchema } from '../../types/api';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 interface SchemaViewerProps {
   dataset: DatasetSummary;
@@ -12,6 +13,7 @@ export const SchemaViewer: React.FC<SchemaViewerProps> = ({ dataset, onClose }) 
   const [schema, setSchema] = useState<DatasetSchema | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const modalRef = useFocusTrap<HTMLDivElement>({ isOpen: true, onClose });
 
   useEffect(() => {
     setLoading(true);
@@ -44,7 +46,14 @@ export const SchemaViewer: React.FC<SchemaViewerProps> = ({ dataset, onClose }) 
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="schema-viewer-title"
+      ref={modalRef}
+      tabIndex={-1}
+      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 focus:outline-none"
+    >
       <div className="bg-white rounded-xl shadow-xl max-w-3xl w-full overflow-hidden border border-slate-200 flex flex-col max-h-[85vh]">
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
@@ -53,7 +62,7 @@ export const SchemaViewer: React.FC<SchemaViewerProps> = ({ dataset, onClose }) 
               <Table className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-sm font-bold text-slate-900">{dataset.display_name} — Schema</h2>
+              <h2 id="schema-viewer-title" className="text-sm font-bold text-slate-900">{dataset.display_name} — Schema</h2>
               <p className="text-xs text-slate-500 font-mono">
                 PostgreSQL table: uploaded_data.{schema?.table_name || '...'}
               </p>
@@ -61,7 +70,8 @@ export const SchemaViewer: React.FC<SchemaViewerProps> = ({ dataset, onClose }) 
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200/60 transition-colors"
+            aria-label="Close dialog"
+            className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200/60 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
           >
             <X className="w-5 h-5" />
           </button>
@@ -90,7 +100,7 @@ export const SchemaViewer: React.FC<SchemaViewerProps> = ({ dataset, onClose }) 
                 </span>
               </div>
 
-              <div className="border border-slate-200 rounded-lg overflow-hidden">
+              <div tabIndex={0} role="region" aria-label="Dataset schema table" className="border border-slate-200 rounded-lg overflow-x-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
                 <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
                   <thead className="bg-slate-50 text-slate-600 font-semibold">
                     <tr>
@@ -158,7 +168,7 @@ export const SchemaViewer: React.FC<SchemaViewerProps> = ({ dataset, onClose }) 
         <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 transition-colors"
+            className="px-4 py-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
           >
             Close
           </button>

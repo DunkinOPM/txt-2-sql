@@ -66,7 +66,7 @@ export const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
             type="button"
             disabled={disabled}
             onClick={() => onSelectQuestion(q)}
-            className="inline-flex items-center text-xs font-medium px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 hover:border-brand-300 hover:bg-brand-50/50 hover:text-brand-700 shadow-2xs transition-all disabled:opacity-50 text-left"
+            className="inline-flex items-center text-xs font-medium px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 hover:border-brand-300 hover:bg-brand-50/50 hover:text-brand-700 shadow-2xs transition-all disabled:opacity-50 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
           >
             <HelpCircle className="w-3 h-3 mr-1.5 text-brand-500 shrink-0" />
             <span>{q}</span>

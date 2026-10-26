@@ -268,7 +268,7 @@ def classify_query_with_gemini(
         return ClassificationResult(
             category=ClassificationCategory.NONSENSICAL,
             confidence=0.0,
-            reason=f"Failed to process query classification: {str(e)}",
+            reason="The AI classification service encountered an unexpected error. Please try rephrasing your question.",
             missing_fields=[],
             ambiguities=[],
         )
@@ -489,8 +489,8 @@ def generate_suggested_questions_with_gemini(
     Generates 3-4 natural language analytical questions grounded ONLY in the dataset's schema.
     Under no circumstances are raw rows, credentials, or sensitive sample values passed to Gemini.
     """
-    if _mock_suggested_questions_handler is not None:
-        return _mock_suggested_questions_handler(dataset_name, columns)
+
+
 
     def build_heuristic_questions() -> list[str]:
         questions = [f"What is the total number of records in {dataset_name}?"]
@@ -519,6 +519,13 @@ def generate_suggested_questions_with_gemini(
             questions.append(f"List the distinct values of {text_cols[1]}.")
 
         return questions[:4]
+
+    if _mock_suggested_questions_handler is not None:
+        try:
+            return _mock_suggested_questions_handler(dataset_name, columns)
+        except Exception as e:
+            logger.warning(f"Error in mock suggested questions handler: {e}")
+            return build_heuristic_questions()
 
     try:
         api_key = settings.gemini_api_key

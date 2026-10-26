@@ -1,13 +1,17 @@
 import time
 import uuid
+import logging
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.api.health import router as health_router
 from app.api.datasets import router as datasets_router
 from app.api.queries import router as queries_router
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Clarification-Driven Conversational Text-to-SQL API",
@@ -43,11 +47,12 @@ async def add_process_time_and_request_id(request: Request, call_next):
         return response
     except Exception as exc:
         process_time = time.time() - start_time
+        logger.error("Unhandled server exception for request %s: %s", request_id, exc, exc_info=True)
         return JSONResponse(
             status_code=500,
             content={
                 "error_code": "INTERNAL_SERVER_ERROR",
-                "message": f"An unexpected server error occurred: {str(exc)}",
+                "message": "An unexpected server error occurred. Please try again later.",
                 "request_id": request_id
             },
             headers={
@@ -83,7 +88,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         content={
             "error_code": "VALIDATION_ERROR",
             "message": "Invalid request parameters or payload.",
-            "details": exc.errors(),
+            "details": jsonable_encoder(exc.errors()),
             "request_id": request_id
         },
         headers={"X-Request-ID": request_id}

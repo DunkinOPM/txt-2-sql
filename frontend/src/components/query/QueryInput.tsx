@@ -52,6 +52,7 @@ export const QueryInput: React.FC<QueryInputProps> = ({
     <form onSubmit={handleSubmit} className="relative bg-white border border-slate-300 rounded-2xl shadow-sm focus-within:border-brand-500 focus-within:ring-1 focus-within:ring-brand-500 transition-all">
       <textarea
         ref={textareaRef}
+        aria-label="Natural language query input"
         rows={1}
         value={text}
         onChange={handleChange}
@@ -60,10 +61,10 @@ export const QueryInput: React.FC<QueryInputProps> = ({
         placeholder={placeholder}
         className="w-full text-xs text-slate-900 bg-transparent px-4 py-3 pr-12 rounded-2xl resize-none focus:outline-none placeholder:text-slate-400 max-h-32 disabled:opacity-50 disabled:cursor-not-allowed"
       />
-      <button
+      <button aria-label="Submit query"
         type="submit"
         disabled={disabled || submitting || !text.trim()}
-        className="absolute right-2.5 bottom-2.5 w-7 h-7 bg-brand-600 hover:bg-brand-700 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-lg flex items-center justify-center transition-colors shadow-sm"
+        className="absolute right-2.5 bottom-2.5 w-7 h-7 bg-brand-600 hover:bg-brand-700 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-lg flex items-center justify-center transition-colors shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
         title="Submit query (Enter)"
       >
         {submitting ? (

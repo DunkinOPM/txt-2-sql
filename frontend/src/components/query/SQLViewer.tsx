@@ -30,7 +30,7 @@ export const SQLViewer: React.FC<SQLViewerProps> = ({ sql }) => {
         <button
           onClick={handleCopy}
           type="button"
-          className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors"
+          className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
           title="Copy SQL to clipboard"
           aria-label="Copy SQL query"
         >
@@ -47,7 +47,7 @@ export const SQLViewer: React.FC<SQLViewerProps> = ({ sql }) => {
           )}
         </button>
       </div>
-      <div className="p-3.5 overflow-x-auto">
+      <div tabIndex={0} role="region" aria-label="SQL query code" className="p-3.5 overflow-x-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400">
         <pre className="font-mono text-emerald-300 text-xs whitespace-pre-wrap leading-relaxed">
           {sql}
         </pre>

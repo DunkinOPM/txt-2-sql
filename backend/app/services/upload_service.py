@@ -87,7 +87,7 @@ async def validate_and_parse_upload(
         total_bytes += len(chunk)
         if total_bytes > max_bytes:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                 detail={
                     "error_code": "FILE_TOO_LARGE",
                     "message": f"File size exceeds limit of {settings.max_upload_mb} MB."

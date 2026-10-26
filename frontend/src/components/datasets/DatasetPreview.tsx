@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { X, Eye, Loader2, AlertCircle } from 'lucide-react';
 import { apiClient } from '../../api/client';
 import { DatasetSummary, DatasetPreview } from '../../types/api';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
 
 interface DatasetPreviewProps {
   dataset: DatasetSummary;
@@ -12,6 +13,7 @@ export const DatasetPreviewModal: React.FC<DatasetPreviewProps> = ({ dataset, on
   const [preview, setPreview] = useState<DatasetPreview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const modalRef = useFocusTrap<HTMLDivElement>({ isOpen: true, onClose });
 
   useEffect(() => {
     setLoading(true);
@@ -28,7 +30,14 @@ export const DatasetPreviewModal: React.FC<DatasetPreviewProps> = ({ dataset, on
   }, [dataset.id]);
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="dataset-preview-title"
+      ref={modalRef}
+      tabIndex={-1}
+      className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 focus:outline-none"
+    >
       <div className="bg-white rounded-xl shadow-xl max-w-5xl w-full overflow-hidden border border-slate-200 flex flex-col max-h-[85vh]">
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
@@ -37,7 +46,7 @@ export const DatasetPreviewModal: React.FC<DatasetPreviewProps> = ({ dataset, on
               <Eye className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-sm font-bold text-slate-900">{dataset.display_name} — Data Preview</h2>
+              <h2 id="dataset-preview-title" className="text-sm font-bold text-slate-900">{dataset.display_name} — Data Preview</h2>
               <p className="text-xs text-slate-500">
                 Displaying sample rows from physical PostgreSQL table
               </p>
@@ -45,7 +54,8 @@ export const DatasetPreviewModal: React.FC<DatasetPreviewProps> = ({ dataset, on
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200/60 transition-colors"
+            aria-label="Close dialog"
+            className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200/60 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
           >
             <X className="w-5 h-5" />
           </button>
@@ -75,7 +85,7 @@ export const DatasetPreviewModal: React.FC<DatasetPreviewProps> = ({ dataset, on
                 </span>
               </div>
 
-              <div className="border border-slate-200 rounded-lg overflow-x-auto shadow-sm">
+              <div tabIndex={0} role="region" aria-label="Dataset preview rows table" className="border border-slate-200 rounded-lg overflow-x-auto shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500">
                 <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
                   <thead className="bg-slate-50 text-slate-700 font-semibold">
                     <tr>
@@ -134,7 +144,7 @@ export const DatasetPreviewModal: React.FC<DatasetPreviewProps> = ({ dataset, on
         <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 transition-colors"
+            className="px-4 py-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
           >
             Close
           </button>

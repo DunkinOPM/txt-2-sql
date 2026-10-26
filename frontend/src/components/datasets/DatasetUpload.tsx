@@ -76,8 +76,17 @@ export const DatasetUpload: React.FC<DatasetUploadProps> = ({ onUploadSuccess })
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         onDrop={onDrop}
+        role="button"
+        tabIndex={0}
+        aria-label="Upload dataset file"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            if (!uploading) fileInputRef.current?.click();
+          }
+        }}
         onClick={() => !uploading && fileInputRef.current?.click()}
-        className={`border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer ${
+        className={`border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
           isDragging
             ? 'border-brand-500 bg-brand-50/50'
             : 'border-slate-300 hover:border-brand-400 bg-white hover:bg-slate-50/50'
@@ -126,7 +135,7 @@ export const DatasetUpload: React.FC<DatasetUploadProps> = ({ onUploadSuccess })
       </div>
 
       {errorMessage && (
-        <div className="bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-lg text-xs flex items-center space-x-2">
+        <div role="alert" aria-live="assertive" className="bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-lg text-xs flex items-center space-x-2">
           <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
           <span className="font-medium">{errorMessage}</span>
         </div>

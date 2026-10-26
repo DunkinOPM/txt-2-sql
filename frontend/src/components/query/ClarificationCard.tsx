@@ -57,12 +57,12 @@ export const ClarificationCard: React.FC<ClarificationCardProps> = ({
             {options.map((opt, idx) => {
               const isSelected = selectedOption === opt;
               return (
-                <button
+                <button aria-label={`Select option: ${opt}`}
                   key={idx}
                   type="button"
                   onClick={() => handleOptionClick(opt)}
                   disabled={disabled || submitting}
-                  className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition-all flex items-center space-x-1.5 ${
+                  className={`text-xs px-3 py-1.5 rounded-lg border font-medium transition-all flex items-center space-x-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 ${
                     isSelected
                       ? 'bg-brand-600 text-white border-brand-700 shadow-sm'
                       : 'bg-white text-slate-700 border-slate-200 hover:border-brand-300 hover:bg-slate-50'
@@ -80,7 +80,7 @@ export const ClarificationCard: React.FC<ClarificationCardProps> = ({
       {/* Free text response / submit */}
       <form onSubmit={handleSubmit} className="pl-9 space-y-2 pt-1">
         <div className="flex items-center space-x-2">
-          <input
+          <input aria-label="Clarification response"
             type="text"
             value={freeText}
             onChange={(e) => setFreeText(e.target.value)}
@@ -88,10 +88,10 @@ export const ClarificationCard: React.FC<ClarificationCardProps> = ({
             placeholder={selectedOption ? 'Add additional notes (optional)...' : 'Or type your custom answer here...'}
             className="flex-1 text-xs border border-slate-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-1 focus:ring-brand-500 text-slate-900 placeholder:text-slate-400"
           />
-          <button
+          <button aria-label="Submit clarification response"
             type="submit"
             disabled={disabled || submitting || (!selectedOption && !freeText.trim())}
-            className="px-3.5 py-2 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold rounded-lg shadow-sm transition-colors flex items-center space-x-1 disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+            className="px-3.5 py-2 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold rounded-lg shadow-sm transition-colors flex items-center space-x-1 disabled:opacity-50 disabled:cursor-not-allowed shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
           >
             {submitting ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />

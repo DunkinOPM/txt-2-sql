@@ -34,7 +34,7 @@ export const DatasetSelector: React.FC<DatasetSelectorProps> = ({
             value={selectedDatasetId || ''}
             onChange={(e) => onSelectDataset(e.target.value)}
             disabled={disabled || readyDatasets.length === 0}
-            className="w-full text-xs font-semibold text-slate-900 bg-transparent pr-8 border-none focus:outline-none focus:ring-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed appearance-none"
+            className="w-full text-xs font-semibold text-slate-900 bg-transparent pr-8 border-none focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 rounded cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed appearance-none"
           >
             {readyDatasets.length === 0 ? (
               <option value="" disabled>

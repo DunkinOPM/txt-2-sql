@@ -12,9 +12,10 @@ import {
 interface SidebarProps {
   isCollapsed: boolean;
   onToggleCollapse: () => void;
+  onNavClick?: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggleCollapse }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggleCollapse, onNavClick }) => {
   const navItems = [
     {
       to: '/',
@@ -58,7 +59,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggleCollapse 
           <button
             onClick={onToggleCollapse}
             aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors mx-auto"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors mx-auto focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-500"
           >
             {isCollapsed ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
           </button>
@@ -71,8 +72,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggleCollapse 
               key={item.to}
               to={item.to}
               end={item.to === '/'}
+              onClick={onNavClick}
               className={({ isActive }) =>
-                `flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                `flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-brand-500 ${
                   isActive
                     ? 'bg-brand-600 text-white shadow-sm'
                     : 'text-slate-300 hover:bg-slate-800 hover:text-white'
@@ -99,12 +101,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggleCollapse 
               <ShieldCheck className="w-4 h-4 mr-1.5 shrink-0" />
               <span>Read-Only SQL Safety</span>
             </div>
-            <p className="text-[11px] text-slate-400 leading-relaxed">
-              PostgreSQL role isolation and AST policy enforcement active.
+            <p className="text-[11px] text-slate-400 leading-normal">
+              Least-privilege PostgreSQL role. No mutations or DDL permitted.
             </p>
           </div>
         ) : (
-          <div className="flex justify-center" title="Read-Only SQL Safety Active">
+          <div className="flex justify-center" title="Read-Only SQL Execution Active">
             <ShieldCheck className="w-5 h-5 text-emerald-400" />
           </div>
         )}
@@ -112,4 +114,3 @@ export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggleCollapse 
     </aside>
   );
 };
-
