@@ -1,10 +1,12 @@
 import time
 import uuid
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.api.health import router as health_router
+from app.api.datasets import router as datasets_router
 
 app = FastAPI(
     title="Clarification-Driven Conversational Text-to-SQL API",
@@ -44,7 +46,7 @@ async def add_process_time_and_request_id(request: Request, call_next):
             status_code=500,
             content={
                 "error_code": "INTERNAL_SERVER_ERROR",
-                "message": "An unexpected server error occurred.",
+                "message": f"An unexpected server error occurred: {str(exc)}",
                 "request_id": request_id
             },
             headers={
@@ -54,8 +56,42 @@ async def add_process_time_and_request_id(request: Request, call_next):
         )
 
 
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    if isinstance(exc.detail, dict):
+        content = {**exc.detail, "request_id": request_id}
+    else:
+        content = {
+            "error_code": "REQUEST_ERROR",
+            "message": str(exc.detail),
+            "request_id": request_id
+        }
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=content,
+        headers={"X-Request-ID": request_id}
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error_code": "VALIDATION_ERROR",
+            "message": "Invalid request parameters or payload.",
+            "details": exc.errors(),
+            "request_id": request_id
+        },
+        headers={"X-Request-ID": request_id}
+    )
+
+
 # Include Routers
 app.include_router(health_router)
+app.include_router(datasets_router)
 
 
 @app.get("/")
@@ -66,4 +102,3 @@ def root():
         "status": "online",
         "docs_url": "/docs"
     }
-
