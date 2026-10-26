@@ -86,6 +86,12 @@ export interface QueryResponse {
   assistant_message: string;
   clarification_question?: string | null;
   clarification_options?: string[] | null;
+  generated_sql?: string | null;
+  explanation?: string | null;
+  columns?: string[] | null;
+  rows?: Record<string, any>[] | null;
+  result_row_count?: number | null;
+  execution_duration_ms?: number | null;
   turns: QueryTurn[];
   created_at: string;
   updated_at: string;

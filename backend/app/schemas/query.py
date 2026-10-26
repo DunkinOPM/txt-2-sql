@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
@@ -45,6 +45,12 @@ class QueryResponse(BaseModel):
     assistant_message: str
     clarification_question: Optional[str] = None
     clarification_options: Optional[List[str]] = None
+    generated_sql: Optional[str] = None
+    explanation: Optional[str] = None
+    columns: Optional[List[str]] = None
+    rows: Optional[List[Dict[str, Any]]] = None
+    result_row_count: Optional[int] = None
+    execution_duration_ms: Optional[int] = None
     turns: List[QueryTurnResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime

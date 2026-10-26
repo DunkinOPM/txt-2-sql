@@ -1,15 +1,25 @@
+import logging
 from typing import Any
 from app.workflows.state import QueryWorkflowState
-from app.services.llm_service import classify_query_with_gemini, rewrite_query_with_gemini
+from app.services.llm_service import (
+    classify_query_with_gemini,
+    rewrite_query_with_gemini,
+    generate_sql_with_gemini,
+    repair_sql_with_gemini,
+    generate_explanation_with_gemini,
+)
+from app.services.sql_validator import validate_sql_query, SqlValidationError
+from app.services.query_execution_service import execute_readonly_sql, QueryExecutionError
 from app.schemas.classification import ClassificationCategory
 
+logger = logging.getLogger(__name__)
+
 MAX_CLARIFICATION_LOOPS = 3
+MAX_SQL_REPAIR_ATTEMPTS = 2
 
 
 def classify_node(state: QueryWorkflowState) -> dict[str, Any]:
-    """
-    Classifies the current question against the authorized dataset schema.
-    """
+    """Classifies the current question against the authorized dataset schema."""
     question_to_classify = state.get("current_question") or state.get("original_question", "")
     dataset_name = state.get("dataset_name", "Dataset")
     schema_summary = state.get("schema_summary", [])
@@ -32,10 +42,7 @@ def classify_node(state: QueryWorkflowState) -> dict[str, Any]:
 
 
 def clarification_node(state: QueryWorkflowState) -> dict[str, Any]:
-    """
-    Handles ambiguous queries. If maximum cycles are exceeded, halts gracefully;
-    otherwise transitions status to awaiting_clarification.
-    """
+    """Handles ambiguous queries. Halts if maximum loops are exceeded."""
     turns = state.get("clarification_turns", 0)
     if turns >= MAX_CLARIFICATION_LOOPS:
         return {
@@ -56,13 +63,11 @@ def clarification_node(state: QueryWorkflowState) -> dict[str, Any]:
 
 
 def refusal_node(state: QueryWorkflowState) -> dict[str, Any]:
-    """
-    Generates tailored, safe, and helpful explanations for queries that cannot proceed to SQL generation.
-    """
+    """Generates tailored, safe explanations for queries that cannot proceed to SQL."""
     category = state.get("category", "")
     dataset_name = state.get("dataset_name", "the selected dataset")
     schema_summary = state.get("schema_summary", [])
-    available_cols = ", ".join(f"'{c.get('original_name') or c.get('internal_name')}'" for c in schema_summary)
+    available_cols = ", ".join(f"'{c.get('original_name')}'" for c in schema_summary)
 
     if category == ClassificationCategory.OUT_OF_SCOPE.value:
         msg = (
@@ -95,13 +100,148 @@ def refusal_node(state: QueryWorkflowState) -> dict[str, Any]:
 
 
 def ready_node(state: QueryWorkflowState) -> dict[str, Any]:
-    """
-    Marks a clear, validated query as ready_for_sql (ready for Phase 4).
-    Phase 3 halts here without generating or executing SQL.
-    """
+    """Marks query as ready for SQL generation (PRD handoff)."""
     return {
         "status": "ready_for_sql",
         "assistant_message": "Question is clear and ready for SQL generation.",
         "clarification_question": None,
         "clarification_options": None,
+    }
+
+
+def generate_sql_node(state: QueryWorkflowState) -> dict[str, Any]:
+    """Generates candidate PostgreSQL SELECT query using Gemini."""
+    question = state.get("current_question") or state.get("refined_question") or state.get("original_question", "")
+    dataset_name = state.get("dataset_name", "Dataset")
+    table_name = state.get("table_name", "")
+    columns_metadata = state.get("columns_metadata", [])
+
+    candidate_sql = generate_sql_with_gemini(
+        dataset_name=dataset_name,
+        table_name=table_name,
+        columns=columns_metadata,
+        question=question,
+    )
+
+    return {
+        "candidate_sql": candidate_sql,
+        "status": "validating_sql",
+        "repair_attempts": state.get("repair_attempts", 0),
+        "last_error": None,
+    }
+
+
+def validate_sql_node(state: QueryWorkflowState) -> dict[str, Any]:
+    """Validates candidate SQL using SQLGlot AST parsing and policy rules."""
+    candidate_sql = state.get("candidate_sql", "")
+    table_name = state.get("table_name", "")
+    columns_metadata = state.get("columns_metadata", [])
+    allowed_columns = {c["internal_name"] for c in columns_metadata if "internal_name" in c}
+
+    try:
+        normalized_sql = validate_sql_query(
+            candidate_sql=candidate_sql,
+            target_table_name=table_name,
+            allowed_columns=allowed_columns,
+        )
+        return {
+            "validated_sql": normalized_sql,
+            "status": "executing",
+            "last_error": None,
+        }
+    except SqlValidationError as e:
+        logger.warning(f"SQL validation rejected query: [{e.error_code}] {e.message}")
+        return {
+            "last_error": e.message,
+            "error_code": e.error_code,
+            "validated_sql": None,
+        }
+
+
+def execute_sql_node(state: QueryWorkflowState) -> dict[str, Any]:
+    """Executes validated SQL query using readonly_user in PostgreSQL."""
+    validated_sql = state.get("validated_sql", "")
+
+    try:
+        columns, rows, row_count, duration_ms = execute_readonly_sql(validated_sql)
+        return {
+            "result_columns": columns,
+            "result_rows": rows,
+            "result_row_count": row_count,
+            "execution_duration_ms": duration_ms,
+            "last_error": None,
+        }
+    except QueryExecutionError as e:
+        logger.warning(f"SQL execution failed: [{e.error_code}] {e.message}")
+        return {
+            "last_error": e.message,
+            "error_code": e.error_code,
+        }
+
+
+def repair_sql_node(state: QueryWorkflowState) -> dict[str, Any]:
+    """Prompts Gemini to correct invalid or failing SQL query."""
+    attempts = state.get("repair_attempts", 0) + 1
+    question = state.get("current_question") or state.get("refined_question") or state.get("original_question", "")
+    dataset_name = state.get("dataset_name", "Dataset")
+    table_name = state.get("table_name", "")
+    columns_metadata = state.get("columns_metadata", [])
+    failed_sql = state.get("candidate_sql", "")
+    error_msg = state.get("last_error", "SQL validation failed")
+
+    repaired_sql = repair_sql_with_gemini(
+        dataset_name=dataset_name,
+        table_name=table_name,
+        columns=columns_metadata,
+        question=question,
+        failed_sql=failed_sql,
+        error_message=error_msg,
+        attempt=attempts,
+    )
+
+    return {
+        "candidate_sql": repaired_sql,
+        "repair_attempts": attempts,
+        "status": "validating_sql",
+        "last_error": None,
+    }
+
+
+def explain_results_node(state: QueryWorkflowState) -> dict[str, Any]:
+    """Generates natural language summary of the results."""
+    question = state.get("current_question") or state.get("original_question", "")
+    validated_sql = state.get("validated_sql", "")
+    row_count = state.get("result_row_count", 0)
+
+    explanation = generate_explanation_with_gemini(
+        question=question,
+        generated_sql=validated_sql,
+        row_count=row_count,
+    )
+
+    return {
+        "status": "completed",
+        "explanation": explanation,
+        "assistant_message": explanation,
+    }
+
+
+def fail_node(state: QueryWorkflowState) -> dict[str, Any]:
+    """Terminates workflow with a clean failure state."""
+    error_code = state.get("error_code") or "QUERY_FAILED"
+    raw_error = state.get("last_error") or "Query execution failed."
+
+    # User-safe explanation
+    if error_code == "QUERY_TIMEOUT":
+        user_msg = "The query took too long to execute and was halted to preserve database resources."
+    elif error_code in ("UNAUTHORIZED_TABLE_ACCESS", "UNAUTHORIZED_COLUMN_ACCESS", "MUTATION_REJECTED"):
+        user_msg = "The requested query attempted unauthorized database access or disallowed operations and was safely refused."
+    else:
+        user_msg = "We were unable to generate or execute a valid query to answer your question after multiple attempts."
+
+    return {
+        "status": "failed",
+        "error_code": error_code,
+        "error_message": raw_error,
+        "assistant_message": user_msg,
     }
