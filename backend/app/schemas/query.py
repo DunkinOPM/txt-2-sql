@@ -30,6 +30,7 @@ class QueryTurnResponse(BaseModel):
     role: str
     turn_type: str
     content: str
+    clarification_options: Optional[List[str]] = None
     created_at: datetime
 
 

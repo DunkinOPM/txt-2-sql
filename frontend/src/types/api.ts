@@ -73,6 +73,7 @@ export interface QueryTurn {
   role: 'user' | 'assistant' | 'system';
   turn_type: 'question' | 'clarification' | 'clarification_answer' | 'status' | 'explanation';
   content: string;
+  clarification_options?: string[] | null;
   created_at: string;
 }
 

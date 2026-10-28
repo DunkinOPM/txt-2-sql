@@ -36,6 +36,7 @@ class Settings(BaseSettings):
 
     # External LLM API
     gemini_api_key: str = "placeholder_key"
+    gemini_model: str = "gemini-3.5-flash-lite"
 
     # Frontend Origin / CORS
     frontend_origin: str = "http://localhost:5173"

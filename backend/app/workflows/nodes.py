@@ -9,6 +9,7 @@ from app.services.llm_service import (
     generate_explanation_with_gemini,
 )
 from app.services.sql_validator import validate_sql_query, SqlValidationError
+from app.services.sql_semantic_validator import validate_sql_semantics
 from app.services.query_execution_service import execute_readonly_sql, QueryExecutionError
 from app.schemas.classification import ClassificationCategory
 
@@ -38,6 +39,7 @@ def classify_node(state: QueryWorkflowState) -> dict[str, Any]:
         "ambiguities": result.ambiguities,
         "clarification_question": result.clarification_question,
         "clarification_options": result.clarification_options,
+        "structured_intent": result.model_dump(),
     }
 
 
@@ -59,6 +61,8 @@ def clarification_node(state: QueryWorkflowState) -> dict[str, Any]:
     return {
         "status": "awaiting_clarification",
         "assistant_message": q_text,
+        "clarification_question": q_text,
+        "clarification_options": state.get("clarification_options") or [],
     }
 
 
@@ -110,17 +114,19 @@ def ready_node(state: QueryWorkflowState) -> dict[str, Any]:
 
 
 def generate_sql_node(state: QueryWorkflowState) -> dict[str, Any]:
-    """Generates candidate PostgreSQL SELECT query using Gemini."""
+    """Generates candidate PostgreSQL SELECT query using Gemini conditioned on structured intent."""
     question = state.get("current_question") or state.get("refined_question") or state.get("original_question", "")
     dataset_name = state.get("dataset_name", "Dataset")
     table_name = state.get("table_name", "")
     columns_metadata = state.get("columns_metadata", [])
+    structured_intent = state.get("structured_intent")
 
     candidate_sql = generate_sql_with_gemini(
         dataset_name=dataset_name,
         table_name=table_name,
         columns=columns_metadata,
         question=question,
+        structured_intent=structured_intent,
     )
 
     return {
@@ -132,18 +138,31 @@ def generate_sql_node(state: QueryWorkflowState) -> dict[str, Any]:
 
 
 def validate_sql_node(state: QueryWorkflowState) -> dict[str, Any]:
-    """Validates candidate SQL using SQLGlot AST parsing and policy rules."""
+    """Validates candidate SQL using SQLGlot AST parsing, policy rules, and semantic intent checks."""
     candidate_sql = state.get("candidate_sql", "")
     table_name = state.get("table_name", "")
     columns_metadata = state.get("columns_metadata", [])
     allowed_columns = {c["internal_name"] for c in columns_metadata if "internal_name" in c}
+    question = state.get("current_question") or state.get("refined_question") or state.get("original_question", "")
+    structured_intent = state.get("structured_intent")
 
     try:
+        # 1. Syntactic, schema, function, and AST safety validation
         normalized_sql = validate_sql_query(
             candidate_sql=candidate_sql,
             target_table_name=table_name,
             allowed_columns=allowed_columns,
         )
+
+        # 2. Semantic intent validation: ensures SQL answers the user's question and preserves structured intent
+        validate_sql_semantics(
+            candidate_sql=normalized_sql,
+            question=question,
+            table_name=table_name,
+            columns_metadata=columns_metadata,
+            structured_intent=structured_intent,
+        )
+
         return {
             "validated_sql": normalized_sql,
             "status": "executing",
@@ -188,6 +207,7 @@ def repair_sql_node(state: QueryWorkflowState) -> dict[str, Any]:
     columns_metadata = state.get("columns_metadata", [])
     failed_sql = state.get("candidate_sql", "")
     error_msg = state.get("last_error", "SQL validation failed")
+    structured_intent = state.get("structured_intent")
 
     repaired_sql = repair_sql_with_gemini(
         dataset_name=dataset_name,
@@ -197,6 +217,7 @@ def repair_sql_node(state: QueryWorkflowState) -> dict[str, Any]:
         failed_sql=failed_sql,
         error_message=error_msg,
         attempt=attempts,
+        structured_intent=structured_intent,
     )
 
     return {
@@ -234,10 +255,15 @@ def fail_node(state: QueryWorkflowState) -> dict[str, Any]:
     # User-safe explanation
     if error_code == "QUERY_TIMEOUT":
         user_msg = "The query took too long to execute and was halted to preserve database resources."
+    elif error_code == "MISSING_REQUESTED_COLUMN":
+        user_msg = f"The query could not be completed because the dataset does not contain the requested column. {raw_error}"
+    elif error_code == "INCOMPATIBLE_COLUMN_TYPE":
+        user_msg = f"The requested calculation is incompatible with the data type of the column. {raw_error}"
     elif error_code in ("UNAUTHORIZED_TABLE_ACCESS", "UNAUTHORIZED_COLUMN_ACCESS", "MUTATION_REJECTED"):
         user_msg = "The requested query attempted unauthorized database access or disallowed operations and was safely refused."
     else:
-        user_msg = "We were unable to generate or execute a valid query to answer your question after multiple attempts."
+        orig_q = state.get("original_question", "your question")
+        user_msg = f"We were unable to generate or execute a valid query to answer '{orig_q}' after multiple attempts. {raw_error}"
 
     return {
         "status": "failed",

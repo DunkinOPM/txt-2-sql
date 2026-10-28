@@ -22,7 +22,7 @@ COPY alembic.ini .
 COPY alembic/ alembic/
 COPY app/ app/
 COPY docker-entrypoint.sh /docker-entrypoint.sh
-RUN chmod +x /docker-entrypoint.sh
+RUN sed -i 's/\r$//' /docker-entrypoint.sh && chmod +x /docker-entrypoint.sh
 
 # Run as non-root user
 RUN useradd -u 1000 -m appuser && \

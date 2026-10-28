@@ -21,10 +21,14 @@ from app.schemas.query import (
 )
 from app.workflows.state import QueryWorkflowState
 from app.workflows.graph import query_graph, sql_execution_graph
+import logging
 from app.services.llm_service import (
+    classify_query_with_gemini,
     rewrite_query_with_gemini,
     generate_suggested_questions_with_gemini,
 )
+
+logger = logging.getLogger(__name__)
 
 MAX_CLARIFICATION_LIMIT = 3
 
@@ -86,6 +90,7 @@ def _build_schema_summary(db: Session, dataset_id: uuid.UUID) -> list[dict[str, 
     return [
         {
             "original_name": c.original_name,
+            "internal_name": c.internal_name,
             "inferred_type": c.inferred_type,
             "nullable": c.nullable,
             "sample_values": c.sample_values,
@@ -108,6 +113,7 @@ def _build_columns_metadata(db: Session, dataset_id: uuid.UUID) -> list[dict[str
             "internal_name": c.internal_name,
             "inferred_type": c.inferred_type,
             "nullable": c.nullable,
+            "sample_values": c.sample_values,
         }
         for c in columns
     ]
@@ -444,6 +450,28 @@ def execute_ready_query(
     db.flush()
 
     q_text = query_record.refined_question or query_record.original_question
+
+    # Reconstruct previous clarification turns if any
+    prev_clarifs = []
+    if query_record.turns:
+        for i in range(len(query_record.turns) - 1):
+            t1 = query_record.turns[i]
+            t2 = query_record.turns[i + 1]
+            if t1.turn_type == "clarification" and t2.turn_type == "clarification_answer":
+                prev_clarifs.append({"question": t1.content, "answer": t2.content})
+
+    structured_intent = None
+    try:
+        understanding = classify_query_with_gemini(
+            dataset_name=dataset.display_name,
+            schema_summary=schema_summary,
+            question=q_text,
+            previous_clarifications=prev_clarifs,
+        )
+        structured_intent = understanding.model_dump()
+    except Exception as e:
+        logger.warning(f"Could not derive structured_intent in execute_ready_query: {e}")
+
     state: QueryWorkflowState = {
         "query_id": str(query_id),
         "dataset_id": str(query_record.dataset_id),
@@ -456,6 +484,7 @@ def execute_ready_query(
         "refined_question": query_record.refined_question,
         "current_question": q_text,
         "category": query_record.category or "RELEVANT_CLEAR",
+        "structured_intent": structured_intent,
         "repair_attempts": 0,
     }
 
@@ -492,6 +521,7 @@ def _build_query_response(
             role=t.role,
             turn_type=t.turn_type,
             content=t.content,
+            clarification_options=t.clarification_options,
             created_at=t.created_at,
         )
         for t in query_record.turns

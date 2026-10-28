@@ -21,6 +21,7 @@ class QueryWorkflowState(TypedDict, total=False):
     clarification_options: Optional[List[str]]
     missing_fields: List[str]
     ambiguities: List[str]
+    structured_intent: Optional[dict[str, Any]]
     candidate_sql: Optional[str]
     validated_sql: Optional[str]
     repair_attempts: int
